@@ -7,48 +7,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Phase 3: Primitive Definitions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isVerified() {
-      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.email == 'adriantamio@gmail.com');
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    // Phase 4: Validation Blueprints
-    function isValidCase(data) {
-      let requiredKeys = ['userId', 'type', 'input', 'verdict', 'legitimacyPercentage', 'createdAt', 'executiveSummary', 'forensicSignals'];
-      return data.keys().hasAll(requiredKeys)
-        && data.userId == request.auth.uid
-        && data.type in ['MAILBOX', 'EMAIL', 'IP', 'WEBSITE', 'EML']
-        && data.verdict in ['MALICIOUS_THREAT', 'SUSPICIOUS_ACTIVITY', 'LEGIT_SIGNAL']
-        && data.legitimacyPercentage is number
-        && data.legitimacyPercentage >= 0 && data.legitimacyPercentage <= 100
-        && data.input is string 
-        && data.executiveSummary is string
-        && data.forensicSignals is list;
-    }
-
-    // User cases collection (Relational Sync & Identity Integrity)
+    // User cases collection - Allow any authenticated user to read/write their own cases
     match /users/{userId}/cases/{caseId} {
-      allow list: if isOwner(userId);
-      allow get: if isOwner(userId);
-      // Pillar 2 & 6: Validation + Verification Requirement
-      allow create: if isOwner(userId) 
-                    && isVerified()
-                    && isValidCase(request.resource.data);
-      allow update: if false; // Cases are immutable forensic records
-      allow delete: if isOwner(userId);
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
     // Connection test path
     match /test/connection {
-      allow get: if isSignedIn();
+      allow get: if request.auth != null;
     }
   }
 }
