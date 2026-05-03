@@ -83,7 +83,7 @@ export async function performForensicAnalysis(type: ToolType, input: string): Pr
       ...data,
       userId: "anonymous", 
       type,
-      input: input.length > 100 ? input.substring(0, 100) + '...' : input, // Truncate for display in history
+      input, // Keep full input
       createdAt: Date.now(),
       id: Math.random().toString(36).substring(2, 15)
     };
@@ -91,8 +91,8 @@ export async function performForensicAnalysis(type: ToolType, input: string): Pr
     console.error("Forensic analysis failed in geminiService:", error);
     
     // Handle specific API error codes
-    if (error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED")) {
-      throw new Error("QUOTA_EXHAUSTED: Your AI Studio credits or free-tier quota are depleted. Please check your billing at https://aistudio.google.com/");
+    if (error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED") || error.message?.includes("credits are depleted")) {
+      throw new Error("QUOTA_EXHAUSTED: Your Google AI Studio credits or free-tier quota are depleted. ACTION REQUIRED: Go to https://aistudio.google.com/ and either add credits OR create a brand new project to stay on the free tier.");
     }
 
     if (error.message?.includes("API_KEY") || error.message?.includes("API key")) {

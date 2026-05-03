@@ -26,5 +26,7 @@ export interface HistoryRecord {
   input: string;
   verdict: Verdict;
   legitimacyPercentage: number;
+  executiveSummary: string;
+  forensicSignals: ForensicSignal[];
   createdAt: number;
 }

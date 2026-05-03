@@ -66,6 +66,13 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Sync current anonymous result to history if user logs in
+  useEffect(() => {
+    if (user && currentResult && currentResult.userId === "anonymous") {
+      saveToHistory(currentResult);
+    }
+  }, [user, currentResult]);
+
   // Sync history with Firestore
   useEffect(() => {
     if (!user) {
@@ -123,7 +130,7 @@ export default function App() {
       const result = await performForensicAnalysis(type, input);
       setCurrentResult(result);
       if (user) {
-        saveToHistory(result);
+        await saveToHistory(result);
       }
     } catch (err: any) {
       console.error("Scan failed", err);
@@ -133,18 +140,14 @@ export default function App() {
     }
   };
 
-  const handleSelectHistory = async (record: HistoryRecord) => {
-    setLoading(true);
-    setError(null);
-    try {
-       const result = await performForensicAnalysis(record.type, record.input);
-       setCurrentResult(result);
-    } catch (err: any) {
-      console.error("History selection failed", err);
-      setError(err.message || "Failed to retrieve archive record.");
-    } finally {
-      setLoading(false);
-    }
+  const handleSelectHistory = (record: HistoryRecord) => {
+    // Instant display from history
+    setCurrentResult({
+      ...record,
+      userId: user?.uid || "anonymous"
+    });
+    // Scroll to top or ensure visible
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAuth = async (e: React.FormEvent) => {

@@ -32,7 +32,9 @@ export function HistorySidebar({ history, onSelect }: HistorySidebarProps) {
                 <span className="text-[10px] font-bold text-electric opacity-70 uppercase">{record.type}</span>
                 <span className="text-[9px] text-white/40">{format(record.createdAt, "HH:mm:ss")}</span>
               </div>
-              <div className="text-[11px] truncate mb-2 text-white/90 font-medium">{record.input}</div>
+              <div className="text-[11px] truncate mb-2 text-white/90 font-medium">
+                {record.input.length > 100 ? record.input.substring(0, 100) + "..." : record.input}
+              </div>
               <div className="flex justify-between items-center">
                 <VerdictBadge verdict={record.verdict} />
                 <span className="text-[10px] text-white/40 font-mono">{record.legitimacyPercentage}%</span>
