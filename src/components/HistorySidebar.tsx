@@ -6,14 +6,25 @@ import { Clock, Search } from "lucide-react";
 interface HistorySidebarProps {
   history: HistoryRecord[];
   onSelect: (record: HistoryRecord) => void;
+  onClear: () => void;
 }
 
-export function HistorySidebar({ history, onSelect }: HistorySidebarProps) {
+export function HistorySidebar({ history, onSelect, onClear }: HistorySidebarProps) {
   return (
     <GlassCard className="h-full flex flex-col gap-4 overflow-hidden" id="history-sidebar">
-      <div className="flex items-center gap-2 mb-2">
-        <Clock className="w-4 h-4 text-electric" />
-        <h2 className="text-sm font-bold tracking-tighter uppercase text-white/60">Case Records</h2>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-electric" />
+          <h2 className="text-sm font-bold tracking-tighter uppercase text-white/60">Case Records</h2>
+        </div>
+        {history.length > 0 && (
+          <button 
+            onClick={onClear}
+            className="text-[9px] font-bold text-malicious/60 hover:text-malicious transition-colors uppercase tracking-widest px-2 py-1 border border-malicious/20 hover:border-malicious/40 rounded"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-white/10">

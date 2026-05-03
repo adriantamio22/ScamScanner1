@@ -33,11 +33,11 @@ Use your vast intelligence to simulate real-world forensic tool outputs. If an i
 export async function checkApiStatus(): Promise<{ ok: boolean; status: string }> {
   try {
     const ai = getAI();
-    const model = ai.getGenerativeModel({ model: "gemini-flash-latest" });
-    // Minimal prompt to test connectivity and quota
-    await model.generateContent({
+    // Minimal prompt to test connectivity and quota using correct SDK pattern
+    await ai.models.generateContent({
+      model: "gemini-flash-latest",
       contents: [{ role: "user", parts: [{ text: "hi" }] }],
-      generationConfig: { maxOutputTokens: 1 }
+      config: { maxOutputTokens: 1 }
     });
     return { ok: true, status: "OPERATIONAL" };
   } catch (error: any) {

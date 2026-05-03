@@ -28,6 +28,8 @@ import {
   onSnapshot, 
   doc, 
   setDoc,
+  deleteDoc,
+  getDocs,
   serverTimestamp,
   getDocFromServer
 } from "firebase/firestore";
@@ -128,6 +130,29 @@ export default function App() {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `${path}/${result.id}`);
+    }
+  };
+
+  const clearHistory = async () => {
+    if (!user) return;
+    if (!window.confirm("ARE YOU SURE YOU WANT TO PURGE ALL CASE RECORDS? THIS ACTION IS IRREVERSIBLE.")) return;
+
+    setLoading(true);
+    const path = `users/${user.uid}/cases`;
+    try {
+      const q = query(collection(db, path));
+      const querySnapshot = await getDocs(q);
+      
+      const deletePromises = querySnapshot.docs.map(document => 
+        deleteDoc(doc(db, path, document.id))
+      );
+      
+      await Promise.all(deletePromises);
+      setCurrentResult(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -296,7 +321,7 @@ export default function App() {
               </button>
             </div>
           )}
-          <HistorySidebar history={history} onSelect={handleSelectHistory} />
+          <HistorySidebar history={history} onSelect={handleSelectHistory} onClear={clearHistory} />
         </div>
 
         {/* Right Span: Tools & Results (9 cols) */}
