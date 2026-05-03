@@ -32,49 +32,67 @@ Use your vast intelligence to simulate real-world forensic tool outputs. If an i
 
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
   const model = "gemini-3-flash-preview";
-  const ai = getAI();
   
-  const response = await ai.models.generateContent({
-    model,
-    contents: `Analyze this ${type} input: ${input}`,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          legitimacyPercentage: { type: Type.NUMBER },
-          verdict: { type: Type.STRING, enum: ["MALICIOUS_THREAT", "SUSPICIOUS_ACTIVITY", "LEGIT_SIGNAL"] },
-          executiveSummary: { type: Type.STRING },
-          forensicSignals: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                severity: { type: Type.STRING, enum: ["CRITICAL", "WARNING", "INFO"] },
-                description: { type: Type.STRING }
-              },
-              required: ["name", "severity", "description"]
+  try {
+    const ai = getAI();
+    
+    console.log(`Starting forensic analysis for ${type}...`);
+    
+    const response = await ai.models.generateContent({
+      model,
+      contents: `Analyze this ${type} input: ${input}. 
+      Input content might be raw email headers/body, an IP address, a domain, or an email address.
+      Perform a deep forensic simulation.`,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            legitimacyPercentage: { type: Type.NUMBER },
+            verdict: { type: Type.STRING, enum: ["MALICIOUS_THREAT", "SUSPICIOUS_ACTIVITY", "LEGIT_SIGNAL"] },
+            executiveSummary: { type: Type.STRING },
+            forensicSignals: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  severity: { type: Type.STRING, enum: ["CRITICAL", "WARNING", "INFO"] },
+                  description: { type: Type.STRING }
+                },
+                required: ["name", "severity", "description"]
+              }
             }
-          }
-        },
-        required: ["legitimacyPercentage", "verdict", "executiveSummary", "forensicSignals"]
+          },
+          required: ["legitimacyPercentage", "verdict", "executiveSummary", "forensicSignals"]
+        }
       }
-    }
-  });
+    });
 
-  const rawJson = response.text?.trim();
-  if (!rawJson) throw new Error("Empty response from intelligence engine.");
-  
-  const data = JSON.parse(rawJson);
-  
-  return {
-    ...data,
-    userId: "anonymous", // Default for now
-    type,
-    input,
-    createdAt: Date.now(),
-    id: Math.random().toString(36).substring(2, 15)
-  };
+    const rawJson = response.text?.trim();
+    if (!rawJson) {
+      console.error("Gemini API returned empty text property", response);
+      throw new Error("Empty response from intelligence engine.");
+    }
+    
+    const data = JSON.parse(rawJson);
+    console.log("Analysis successful:", data.verdict);
+    
+    return {
+      ...data,
+      userId: "anonymous", 
+      type,
+      input: input.length > 100 ? input.substring(0, 100) + '...' : input, // Truncate for display in history
+      createdAt: Date.now(),
+      id: Math.random().toString(36).substring(2, 15)
+    };
+  } catch (error: any) {
+    console.error("Forensic analysis failed in geminiService:", error);
+    // Rethrow with more context if it's an API error
+    if (error.message?.includes("API_KEY") || error.message?.includes("API key")) {
+       throw new Error("SEC_AUTH_FAILURE: Gemini API Key is invalid or missing in environment.");
+    }
+    throw error;
+  }
 }

@@ -6,9 +6,10 @@ import { motion } from "motion/react";
 interface ResultsDisplayProps {
   result: ScanResult | null;
   loading: boolean;
+  error?: string | null;
 }
 
-export function ResultsDisplay({ result, loading }: ResultsDisplayProps) {
+export function ResultsDisplay({ result, loading, error }: ResultsDisplayProps) {
   if (loading) {
     return (
       <GlassCard className="h-full flex items-center justify-center min-h-[300px]">
@@ -18,6 +19,28 @@ export function ResultsDisplay({ result, loading }: ResultsDisplayProps) {
             <div className="absolute inset-0 bg-electric/20 blur-xl animate-pulse" />
           </div>
           <div className="text-electric text-xs font-bold tracking-[0.2em] animate-pulse">ANALYZING SIGNALS...</div>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  if (error) {
+    return (
+      <GlassCard className="h-full flex items-center justify-center border-malicious/30 bg-malicious/5 min-h-[300px]">
+        <div className="text-center space-y-4 p-8">
+          <div className="relative inline-block">
+            <AlertTriangle className="w-12 h-12 mx-auto text-malicious" />
+            <div className="absolute inset-0 bg-malicious/20 blur-xl" />
+          </div>
+          <div className="space-y-2">
+            <p className="text-[10px] uppercase font-bold tracking-widest text-malicious">Diagnostic Failure</p>
+            <p className="text-xs text-white/70 max-w-md mx-auto font-mono bg-black/40 p-4 border border-malicious/20 rounded">
+              {error}
+            </p>
+            <p className="text-[9px] text-white/30 uppercase mt-4">
+              Check API status and environmental authentication tokens.
+            </p>
+          </div>
         </div>
       </GlassCard>
     );

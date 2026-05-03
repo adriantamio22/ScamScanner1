@@ -38,6 +38,7 @@ export default function App() {
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [currentResult, setCurrentResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
@@ -117,14 +118,16 @@ export default function App() {
 
   const handleScan = async (type: ToolType, input: string) => {
     setLoading(true);
+    setError(null);
     try {
       const result = await performForensicAnalysis(type, input);
       setCurrentResult(result);
       if (user) {
         saveToHistory(result);
       }
-    } catch (error) {
-      console.error("Scan failed", error);
+    } catch (err: any) {
+      console.error("Scan failed", err);
+      setError(err.message || "An unknown error occurred during forensic scan.");
     } finally {
       setLoading(false);
     }
@@ -132,11 +135,13 @@ export default function App() {
 
   const handleSelectHistory = async (record: HistoryRecord) => {
     setLoading(true);
+    setError(null);
     try {
        const result = await performForensicAnalysis(record.type, record.input);
        setCurrentResult(result);
-    } catch (e) {
-      console.error(e);
+    } catch (err: any) {
+      console.error("History selection failed", err);
+      setError(err.message || "Failed to retrieve archive record.");
     } finally {
       setLoading(false);
     }
@@ -274,14 +279,14 @@ export default function App() {
           <div className="flex-1 min-h-[400px]">
             <AnimatePresence mode="wait">
               <motion.div
-                key={currentResult?.id || 'idle'}
+                key={currentResult?.id || error || 'idle'}
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.98 }}
                 transition={{ duration: 0.2 }}
                 className="h-full"
               >
-                <ResultsDisplay result={currentResult} loading={loading} />
+                <ResultsDisplay result={currentResult} loading={loading} error={error} />
               </motion.div>
             </AnimatePresence>
           </div>
