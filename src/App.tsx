@@ -114,8 +114,8 @@ export default function App() {
         input: result.input,
         verdict: result.verdict,
         legitimacyPercentage: result.legitimacyPercentage,
-        executiveSummary: result.executiveSummary,
-        forensicSignals: result.forensicSignals,
+        executiveSummary: result.executiveSummary || "Analysis summary unavailable.",
+        forensicSignals: result.forensicSignals || [],
         createdAt: serverTimestamp(),
       });
     } catch (error) {
