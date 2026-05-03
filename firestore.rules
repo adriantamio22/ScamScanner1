@@ -20,13 +20,8 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
     // Phase 4: Validation Blueprints
     function isValidCase(data) {
-      // 8 mandatory fields
       let requiredKeys = ['userId', 'type', 'input', 'verdict', 'legitimacyPercentage', 'createdAt', 'executiveSummary', 'forensicSignals'];
       return data.keys().hasAll(requiredKeys)
         && data.userId == request.auth.uid
@@ -34,10 +29,9 @@ service cloud.firestore {
         && data.verdict in ['MALICIOUS_THREAT', 'SUSPICIOUS_ACTIVITY', 'LEGIT_SIGNAL']
         && data.legitimacyPercentage is number
         && data.legitimacyPercentage >= 0 && data.legitimacyPercentage <= 100
-        && data.input is string && data.input.size() <= 65536 // Supports EML/Large headers
-        && data.executiveSummary is string && data.executiveSummary.size() <= 10000
-        && data.forensicSignals is list && data.forensicSignals.size() <= 128
-        && data.createdAt == request.time;
+        && data.input is string 
+        && data.executiveSummary is string
+        && data.forensicSignals is list;
     }
 
     // User cases collection (Relational Sync & Identity Integrity)
@@ -47,7 +41,6 @@ service cloud.firestore {
       // Pillar 2 & 6: Validation + Verification Requirement
       allow create: if isOwner(userId) 
                     && isVerified()
-                    && isValidId(caseId) 
                     && isValidCase(request.resource.data);
       allow update: if false; // Cases are immutable forensic records
       allow delete: if isOwner(userId);
