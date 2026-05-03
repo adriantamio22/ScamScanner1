@@ -5,12 +5,12 @@
 
 import React, { useState, useEffect } from "react";
 import { ToolType, ScanResult, HistoryRecord } from "./types";
-import { performForensicAnalysis } from "./services/geminiService";
+import { performForensicAnalysis, checkApiStatus } from "./services/geminiService";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { ToolSelector } from "./components/ForensicTool";
 import { motion, AnimatePresence } from "motion/react";
-import { Shield, Lock, Cpu, Mail, Key } from "lucide-react";
+import { Shield, Lock, Cpu, Mail, Key, ShieldAlert, Radar, Search, Fingerprint, Activity } from "lucide-react";
 import { PulseIndicator } from "./components/ui/Primitives";
 import { auth, db, googleProvider } from "@/src/lib/firebase";
 import { 
@@ -45,6 +45,7 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [portalStatus, setPortalStatus] = useState({ ok: true, status: "OPERATIONAL" });
 
   // Listen for auth state changes
   useEffect(() => {
@@ -66,7 +67,18 @@ export default function App() {
     };
     testConnection();
 
-    return () => unsubscribe();
+    // Check Gemini API Status
+    const updateApiStatus = async () => {
+      const status = await checkApiStatus();
+      setPortalStatus(status);
+    };
+    updateApiStatus();
+    const statusInterval = setInterval(updateApiStatus, 120000); // Check every 2 mins
+
+    return () => {
+      unsubscribe();
+      clearInterval(statusInterval);
+    };
   }, []);
 
   // Sync history with Firestore
@@ -197,18 +209,32 @@ export default function App() {
       >
         <div className="flex items-center gap-4 group cursor-pointer" onClick={() => window.location.reload()}>
           <div className="relative">
-            <div className="absolute -inset-1 bg-electric/20 blur-sm rounded-lg group-hover:bg-electric/40 transition-all"></div>
-            <div className="relative p-3 bg-black border border-electric/30 rounded-lg group-hover:border-electric transition-colors">
-              <Shield className="w-8 h-8 text-electric" />
-              <div className="absolute top-0 right-0 w-2 h-2 bg-electric rounded-full animate-ping"></div>
+            <div className="absolute -inset-2 bg-electric/20 blur-lg rounded-full group-hover:bg-electric/40 transition-all"></div>
+            <div className="relative p-3 bg-black border-2 border-electric/40 rounded-xl group-hover:border-electric transition-all shadow-[0_0_15px_rgba(0,242,255,0.1)] group-hover:shadow-[0_0_20px_rgba(0,242,255,0.2)]">
+              <div className="absolute inset-0 flex items-center justify-center">
+                 <motion.div 
+                   animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }}
+                   transition={{ duration: 2, repeat: Infinity }}
+                   className="w-10 h-10 bg-electric/5 rounded-full"
+                 />
+              </div>
+              <ShieldAlert className="w-8 h-8 text-electric relative z-10" />
+              <motion.div 
+                animate={{ y: [-12, 12, -12] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                className="absolute left-0 right-0 h-[1px] bg-electric/50 z-20 shadow-[0_0_8px_#00f2ff]"
+              />
             </div>
           </div>
           <div>
             <h1 className="text-3xl font-black tracking-tighter text-white flex items-center gap-2 group-hover:text-electric transition-colors">
               SCAM<span className="text-electric">SCANNER</span>
-              <span className="text-[10px] px-1.5 py-0.5 border border-electric/30 text-electric rounded uppercase tracking-[0.2em] font-mono group-hover:border-electric transition-colors">CORE_v4</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] px-1.5 py-0.5 border border-electric/30 text-electric rounded uppercase tracking-[0.2em] font-mono group-hover:border-electric transition-colors leading-none mb-1">CORE_v4</span>
+                <span className="text-[7px] text-malicious/60 font-mono animate-pulse">THREAT_DETECTION: ON</span>
+              </div>
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-[0.43em] font-bold">Digital Forensic Intelligence Agency</p>
+            <p className="text-[10px] text-white/40 uppercase tracking-[0.43em] font-bold">Digital Forensic Intelligence</p>
           </div>
         </div>
 
@@ -242,9 +268,11 @@ export default function App() {
           <div className="hidden lg:flex items-center gap-3 border-l border-white/10 pl-6">
             <div className="text-right mr-3">
               <div className="text-[9px] text-white/30 uppercase font-bold">Portal Status</div>
-              <div className="text-[10px] font-mono text-legit uppercase">Operational</div>
+              <div className={`text-[10px] font-mono uppercase ${portalStatus.ok ? 'text-legit' : 'text-malicious'}`}>
+                {portalStatus.status}
+              </div>
             </div>
-            <PulseIndicator active={true} color="bg-legit" />
+            <PulseIndicator active={true} color={portalStatus.ok ? "bg-legit" : "bg-malicious"} />
           </div>
         </div>
       </motion.header>
@@ -312,11 +340,18 @@ export default function App() {
               <div className="scanline" />
               <div className="space-y-6">
                 <div className="flex flex-col items-center gap-4">
-                  <div className="p-4 bg-electric/10 rounded-2xl border border-electric/30">
-                    <Shield className="w-8 h-8 text-electric" />
+                  <div className="relative p-4 bg-electric/10 rounded-2xl border border-electric/30">
+                    <ShieldAlert className="w-8 h-8 text-electric" />
+                    <motion.div 
+                      animate={{ y: [-15, 15, -15] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                      className="absolute left-1 right-1 h-[1px] bg-electric/50"
+                    />
                   </div>
                   <div className="text-center">
-                    <h2 className="text-xl font-bold tracking-tight uppercase">Forensic Access</h2>
+                    <h2 className="text-xl font-bold tracking-tight uppercase flex items-center justify-center gap-2">
+                       SCAM<span className="text-electric">SCANNER</span> ACCESS
+                    </h2>
                     <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">
                       {isSignUp ? "Register new investigator profile" : "Verify active session credentials"}
                     </p>

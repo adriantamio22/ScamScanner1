@@ -30,6 +30,24 @@ For any input, you must provide:
 
 Use your vast intelligence to simulate real-world forensic tool outputs. If an input is clearly a test or placeholder, still provide a realistic, professional response.`;
 
+export async function checkApiStatus(): Promise<{ ok: boolean; status: string }> {
+  try {
+    const ai = getAI();
+    const model = ai.getGenerativeModel({ model: "gemini-flash-latest" });
+    // Minimal prompt to test connectivity and quota
+    await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      generationConfig: { maxOutputTokens: 1 }
+    });
+    return { ok: true, status: "OPERATIONAL" };
+  } catch (error: any) {
+    if (error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED") || error.message?.includes("credits are depleted")) {
+      return { ok: false, status: "QUOTA_EXHAUSTED" };
+    }
+    return { ok: false, status: "API_ERROR" };
+  }
+}
+
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
   const model = "gemini-flash-latest";
   
