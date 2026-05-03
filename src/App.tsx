@@ -43,11 +43,14 @@ export default function App() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
 
   // Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      // Clear results and history preview when user changes to prevent data leak
+      setCurrentResult(null);
       setUser(firebaseUser);
     });
 
@@ -65,13 +68,6 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
-
-  // Sync current anonymous result to history if user logs in
-  useEffect(() => {
-    if (user && currentResult && currentResult.userId === "anonymous") {
-      saveToHistory(currentResult);
-    }
-  }, [user, currentResult]);
 
   // Sync history with Firestore
   useEffect(() => {
@@ -347,19 +343,30 @@ export default function App() {
                         <Key className="h-4 w-4 text-white/20 group-focus-within:text-electric transition-colors" />
                       </div>
                       <input
-                        type="password"
+                        type={showPassword ? "text" : "password"}
                         required
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="ACCESS_KEY"
-                        className="block w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-electric transition-all font-mono placeholder:text-white/10"
+                        className="block w-full pl-10 pr-12 py-3 bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-electric transition-all font-mono placeholder:text-white/10"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/20 hover:text-white/40 transition-colors"
+                      >
+                        {showPassword ? (
+                          <div className="text-[8px] font-bold uppercase tracking-tighter">Hide</div>
+                        ) : (
+                          <div className="text-[8px] font-bold uppercase tracking-tighter">Show</div>
+                        )}
+                      </button>
                     </div>
                   </div>
 
                   {authError && (
-                    <p className="text-[9px] text-malicious font-mono bg-malicious/10 p-2 border border-malicious/20 uppercase">
-                      ERR_AUTH: {authError}
+                    <p className="text-[9px] text-malicious font-mono bg-malicious/10 p-2 border border-malicious/20 uppercase break-words">
+                      ERR_AUTH: {authError.toUpperCase()}
                     </p>
                   )}
 
