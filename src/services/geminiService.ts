@@ -31,7 +31,7 @@ For any input, you must provide:
 Use your vast intelligence to simulate real-world forensic tool outputs. If an input is clearly a test or placeholder, still provide a realistic, professional response.`;
 
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-1.5-flash";
   
   try {
     const ai = getAI();
@@ -89,7 +89,12 @@ export async function performForensicAnalysis(type: ToolType, input: string): Pr
     };
   } catch (error: any) {
     console.error("Forensic analysis failed in geminiService:", error);
-    // Rethrow with more context if it's an API error
+    
+    // Handle specific API error codes
+    if (error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED")) {
+      throw new Error("QUOTA_EXHAUSTED: Your AI Studio credits or free-tier quota are depleted. Please check your billing at https://aistudio.google.com/");
+    }
+
     if (error.message?.includes("API_KEY") || error.message?.includes("API key")) {
        throw new Error("SEC_AUTH_FAILURE: Gemini API Key is invalid or missing in environment.");
     }
