@@ -1,7 +1,18 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ScanResult, ToolType, Verdict } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not defined. Please add it to your environment variables.");
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+}
 
 const SYSTEM_PROMPT = `You are the core engine of ScamScanner, a "Bento Grid" Digital Forensic Lab.
 Your task is to analyze inputs for three specialized tools:
@@ -21,6 +32,7 @@ Use your vast intelligence to simulate real-world forensic tool outputs. If an i
 
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
   const model = "gemini-3-flash-preview";
+  const ai = getAI();
   
   const response = await ai.models.generateContent({
     model,
