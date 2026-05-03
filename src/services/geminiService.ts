@@ -31,7 +31,7 @@ For any input, you must provide:
 Use your vast intelligence to simulate real-world forensic tool outputs. If an input is clearly a test or placeholder, still provide a realistic, professional response.`;
 
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
-  const model = "gemini-1.5-flash";
+  const model = "gemini-flash-latest";
   
   try {
     const ai = getAI();
