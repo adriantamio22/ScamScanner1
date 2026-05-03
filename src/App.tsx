@@ -1,0 +1,426 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from "react";
+import { ToolType, ScanResult, HistoryRecord } from "./types";
+import { performForensicAnalysis } from "./services/geminiService";
+import { HistorySidebar } from "./components/HistorySidebar";
+import { ResultsDisplay } from "./components/ResultsDisplay";
+import { ToolSelector } from "./components/ForensicTool";
+import { motion, AnimatePresence } from "motion/react";
+import { Shield, Lock, Cpu, Mail, Key } from "lucide-react";
+import { PulseIndicator } from "./components/ui/Primitives";
+import { auth, db, googleProvider } from "@/src/lib/firebase";
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup,
+  signOut,
+  User
+} from "firebase/auth";
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  onSnapshot, 
+  doc, 
+  setDoc,
+  serverTimestamp,
+  getDocFromServer
+} from "firebase/firestore";
+import { handleFirestoreError, OperationType } from "@/src/lib/firestoreUtils";
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [currentResult, setCurrentResult] = useState<ScanResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+
+  // Listen for auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+    });
+
+    // Test Firestore connection on boot
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error: any) {
+        if(error?.message?.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration.");
+        }
+      }
+    };
+    testConnection();
+
+    return () => unsubscribe();
+  }, []);
+
+  // Sync history with Firestore
+  useEffect(() => {
+    if (!user) {
+      setHistory([]);
+      return;
+    }
+
+    const path = `users/${user.uid}/cases`;
+    const q = query(collection(db, path), orderBy("createdAt", "desc"));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const records: HistoryRecord[] = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data as HistoryRecord,
+          id: doc.id,
+          // Handle Firestore Timestamp to number conversion
+          createdAt: data.createdAt?.toMillis?.() || Date.now()
+        };
+      });
+      setHistory(records);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const saveToHistory = async (result: ScanResult) => {
+    if (!user) return;
+    
+    const path = `users/${user.uid}/cases`;
+    const docRef = doc(db, path, result.id);
+    
+    try {
+      await setDoc(docRef, {
+        userId: user.uid,
+        type: result.type,
+        input: result.input,
+        verdict: result.verdict,
+        legitimacyPercentage: result.legitimacyPercentage,
+        executiveSummary: result.executiveSummary,
+        forensicSignals: result.forensicSignals,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `${path}/${result.id}`);
+    }
+  };
+
+  const handleScan = async (type: ToolType, input: string) => {
+    setLoading(true);
+    try {
+      const result = await performForensicAnalysis(type, input);
+      setCurrentResult(result);
+      if (user) {
+        saveToHistory(result);
+      }
+    } catch (error) {
+      console.error("Scan failed", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectHistory = async (record: HistoryRecord) => {
+    setLoading(true);
+    try {
+       const result = await performForensicAnalysis(record.type, record.input);
+       setCurrentResult(result);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setLoading(true);
+    try {
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+      setIsLoginModalOpen(false);
+      setEmail("");
+      setPassword("");
+    } catch (error: any) {
+      setAuthError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError("");
+    setLoading(true);
+    try {
+      await signInWithPopup(auth, googleProvider);
+      setIsLoginModalOpen(false);
+    } catch (error: any) {
+      setAuthError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
+
+  return (
+    <div className="min-h-screen p-4 md:p-8 flex flex-col gap-6 max-w-7xl mx-auto">
+      {/* Header Bar */}
+      <motion.header 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-white/10 pb-6"
+      >
+        <div className="flex items-center gap-4 group cursor-pointer" onClick={() => window.location.reload()}>
+          <div className="relative">
+            <div className="absolute -inset-1 bg-electric/20 blur-sm rounded-lg group-hover:bg-electric/40 transition-all"></div>
+            <div className="relative p-3 bg-black border border-electric/30 rounded-lg group-hover:border-electric transition-colors">
+              <Shield className="w-8 h-8 text-electric" />
+              <div className="absolute top-0 right-0 w-2 h-2 bg-electric rounded-full animate-ping"></div>
+            </div>
+          </div>
+          <div>
+            <h1 className="text-3xl font-black tracking-tighter text-white flex items-center gap-2 group-hover:text-electric transition-colors">
+              SCAM<span className="text-electric">SCANNER</span>
+              <span className="text-[10px] px-1.5 py-0.5 border border-electric/30 text-electric rounded uppercase tracking-[0.2em] font-mono group-hover:border-electric transition-colors">CORE_v4</span>
+            </h1>
+            <p className="text-[10px] text-white/40 uppercase tracking-[0.43em] font-bold">Digital Forensic Intelligence Agency</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-6">
+          {user ? (
+            <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-2 pl-4 rounded-lg">
+              <div className="text-right">
+                <div className="text-[9px] text-white/30 uppercase font-bold">Investigator Id</div>
+                <div className="text-[10px] font-mono text-electric uppercase truncate max-w-[100px]">{user.email?.split('@')[0]}</div>
+              </div>
+              <button 
+                onClick={logout}
+                className="p-2 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-malicious"
+                title="Deauthorize Session"
+              >
+                <Lock className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => {
+                setIsLoginModalOpen(true);
+                setAuthError("");
+              }}
+              className="px-4 py-2 bg-electric text-black font-bold text-[10px] uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              Initialize Identity
+            </button>
+          )}
+
+          <div className="hidden lg:flex items-center gap-3 border-l border-white/10 pl-6">
+            <div className="text-right mr-3">
+              <div className="text-[9px] text-white/30 uppercase font-bold">Portal Status</div>
+              <div className="text-[10px] font-mono text-legit uppercase">Operational</div>
+            </div>
+            <PulseIndicator active={true} color="bg-legit" />
+          </div>
+        </div>
+      </motion.header>
+
+      {/* Main Bento Grid */}
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 pb-8">
+        {/* Left Span: History (3 cols) */}
+        <div className="lg:col-span-3 h-[600px] lg:h-auto order-2 lg:order-1 relative group">
+          {!user && (
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center gap-4 rounded-xl border border-white/5">
+              <Lock className="w-8 h-8 text-white/20" />
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">History Locked</p>
+                <p className="text-[9px] text-white/20">Authorization required to access legacy case files.</p>
+              </div>
+              <button 
+                onClick={() => setIsLoginModalOpen(true)}
+                className="text-[10px] font-bold text-electric hover:text-white underline underline-offset-4"
+              >
+                Sign In
+              </button>
+            </div>
+          )}
+          <HistorySidebar history={history} onSelect={handleSelectHistory} />
+        </div>
+
+        {/* Right Span: Tools & Results (9 cols) */}
+        <div className="lg:col-span-9 flex flex-col gap-6 order-1 lg:order-2">
+          <ToolSelector onScan={handleScan} loading={loading} />
+
+          <div className="flex-1 min-h-[400px]">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentResult?.id || 'idle'}
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
+                className="h-full"
+              >
+                <ResultsDisplay result={currentResult} loading={loading} />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+      </main>
+
+      {/* Login Modal */}
+      <AnimatePresence>
+        {isLoginModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsLoginModalOpen(false)}
+              className="absolute inset-0 bg-black/95 backdrop-blur-3xl" 
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-md bg-black border border-white/10 p-8 rounded-2xl overflow-hidden glass-card shadow-2xl shadow-electric/5"
+            >
+              <div className="scanline" />
+              <div className="space-y-6">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="p-4 bg-electric/10 rounded-2xl border border-electric/30">
+                    <Shield className="w-8 h-8 text-electric" />
+                  </div>
+                  <div className="text-center">
+                    <h2 className="text-xl font-bold tracking-tight uppercase">Forensic Access</h2>
+                    <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">
+                      {isSignUp ? "Register new investigator profile" : "Verify active session credentials"}
+                    </p>
+                  </div>
+                </div>
+                
+                <form onSubmit={handleAuth} className="space-y-4">
+                  <div className="space-y-4">
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-4 w-4 text-white/20 group-focus-within:text-electric transition-colors" />
+                      </div>
+                      <input
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="EMAIL_ADDRESS"
+                        className="block w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-electric transition-all font-mono placeholder:text-white/10"
+                      />
+                    </div>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Key className="h-4 w-4 text-white/20 group-focus-within:text-electric transition-colors" />
+                      </div>
+                      <input
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="ACCESS_KEY"
+                        className="block w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-electric transition-all font-mono placeholder:text-white/10"
+                      />
+                    </div>
+                  </div>
+
+                  {authError && (
+                    <p className="text-[9px] text-malicious font-mono bg-malicious/10 p-2 border border-malicious/20 uppercase">
+                      ERR_AUTH: {authError}
+                    </p>
+                  )}
+
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-4 bg-electric text-black font-bold text-xs uppercase tracking-[0.2em] hover:bg-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading ? "PROCESSING..." : isSignUp ? "CREATE IDENTITY" : "AUTHORIZE SESSION"}
+                  </button>
+                </form>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-white/10"></div>
+                  </div>
+                  <div className="relative flex justify-center text-[8px] uppercase tracking-[0.2em]">
+                    <span className="bg-black px-2 text-white/20">OR CONTINGENCY</span>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                  className="w-full py-3 bg-white/5 border border-white/10 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-3 group"
+                >
+                  <svg className="w-4 h-4 group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
+                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  Authorize with Google
+                </button>
+
+                <div className="text-center">
+                  <button 
+                    onClick={() => {
+                      setIsSignUp(!isSignUp);
+                      setAuthError("");
+                    }}
+                    className="text-[10px] font-bold text-white/40 hover:text-electric transition-colors uppercase tracking-widest"
+                  >
+                    {isSignUp ? "Already registered? Login" : "New profile? Register here"}
+                  </button>
+                </div>
+
+                <div className="pt-4 flex justify-center gap-4 text-[8px] text-white/10 font-mono">
+                  <span>SECURE_LAYER_X1</span>
+                  <span>IP_LOGGING_ACTIVE</span>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Footer Meta */}
+      <footer className="text-[9px] text-white/20 uppercase tracking-widest flex justify-between items-center border-t border-white/5 pt-4">
+        <div className="flex items-center gap-4">
+          <span>© 2026 MALICIOUS INTELLIGENCE PORTAL // SCAMSCANNER-ENGINE</span>
+          <span className="opacity-30 hover:opacity-100 transition-opacity cursor-default">DEV_UID: ADRIAN_TAMIO</span>
+        </div>
+        <div className="flex gap-4">
+          <span>FOR INTERNAL FORENSIC USE ONLY</span>
+          <span className="text-white/40">SYSTEM_UPTIME: 99.98%</span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
