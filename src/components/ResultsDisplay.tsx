@@ -1,6 +1,6 @@
 import { ScanResult } from "../types";
 import { GlassCard, VerdictBadge, PulseIndicator } from "./ui/Primitives";
-import { Shield, AlertTriangle, CheckCircle, Info, ChevronRight, Activity } from "lucide-react";
+import { Radar, AlertTriangle, CheckCircle, Info, ChevronRight, Activity } from "lucide-react";
 import { motion } from "motion/react";
 
 interface ResultsDisplayProps {
@@ -50,7 +50,7 @@ export function ResultsDisplay({ result, loading, error }: ResultsDisplayProps) 
     return (
       <GlassCard className="h-full flex items-center justify-center border-dashed min-h-[300px]">
         <div className="text-center space-y-2 opacity-30">
-          <Shield className="w-12 h-12 mx-auto mb-4" />
+          <Radar className="w-12 h-12 mx-auto mb-4 animate-pulse" />
           <p className="text-[10px] uppercase font-bold tracking-widest">Awaiting Forensic Input</p>
           <p className="text-[9px] max-w-[200px] mx-auto">Select a diagnostic tool and provide parameters to initialize scan protocol.</p>
         </div>

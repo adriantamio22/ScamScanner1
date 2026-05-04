@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import { ToolType } from "../types";
-import { Mail, ShieldCheck, Globe, Search, ArrowRight, MousePointer2, FileSearch, Upload, FileText } from "lucide-react";
+import { Mail, Radar, Globe, Search, ArrowRight, MousePointer2, FileSearch, Upload, FileText } from "lucide-react";
 import { GlassCard } from "./ui/Primitives";
 
 interface ToolSelectorProps {
@@ -19,7 +19,7 @@ const TOOLS = [
   {
     type: 'EMAIL' as ToolType,
     label: 'Email Verifier',
-    icon: ShieldCheck,
+    icon: Radar,
     description: 'MailboxValidator simulation. Checks syntax, existence, disposable status, and reputation.',
     placeholder: 'Enter email address to verify...'
   },

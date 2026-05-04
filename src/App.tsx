@@ -10,7 +10,7 @@ import { HistorySidebar } from "./components/HistorySidebar";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { ToolSelector } from "./components/ForensicTool";
 import { motion, AnimatePresence } from "motion/react";
-import { Shield, Lock, Cpu, Mail, Key, ShieldAlert, Radar, Search, Fingerprint, Activity } from "lucide-react";
+import { Shield, Lock, Cpu, Mail, Key, Radar, Search, Fingerprint, Activity } from "lucide-react";
 import { PulseIndicator } from "./components/ui/Primitives";
 import { auth, db, googleProvider } from "@/src/lib/firebase";
 import { 
@@ -217,6 +217,7 @@ export default function App() {
   };
 
   const logout = async () => {
+    if (!window.confirm("ARE YOU SURE YOU WANT TO DEAUTHORIZE THIS SESSION?")) return;
     try {
       await signOut(auth);
     } catch (error) {
@@ -232,7 +233,21 @@ export default function App() {
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-white/10 pb-6"
       >
-        <div className="flex items-center gap-4 group cursor-pointer" onClick={() => window.location.reload()}>
+        <div className="flex items-center gap-4 group cursor-pointer relative" onClick={() => window.location.reload()}>
+          {/* Global Scanline Animation */}
+          <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none z-30">
+            <motion.div 
+              animate={{ y: ["-100%", "200%"] }}
+              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+              className="absolute left-0 right-0 h-[2px] bg-electric/30 shadow-[0_0_15px_#00f2ff] opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+            <motion.div 
+              animate={{ y: ["-100%", "200%"] }}
+              transition={{ duration: 4.5, repeat: Infinity, ease: "linear", delay: 0.5 }}
+              className="absolute left-0 right-0 h-[1px] bg-electric/10 shadow-[0_0_10px_#00f2ff] opacity-40 group-hover:opacity-70 transition-opacity"
+            />
+          </div>
+
           <div className="relative">
             <div className="absolute -inset-4 bg-electric/20 blur-2xl rounded-full group-hover:bg-electric/40 transition-all duration-700 animate-pulse"></div>
             <div className="relative p-4 bg-black/80 backdrop-blur-xl border-2 border-electric/40 rounded-2xl group-hover:border-electric group-hover:scale-105 transition-all shadow-[0_0_25px_rgba(0,242,255,0.2)] group-hover:shadow-[0_0_40px_rgba(0,242,255,0.4)] overflow-hidden">
@@ -246,15 +261,10 @@ export default function App() {
                    className="w-12 h-12 bg-electric/10 rounded-full"
                  />
               </div>
-              <ShieldAlert className="w-9 h-9 text-electric relative z-10 drop-shadow-[0_0_10px_#00f2ff]" />
-              <motion.div 
-                animate={{ y: [-20, 20, -20] }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-                className="absolute left-0 right-0 h-[2px] bg-electric/60 z-20 shadow-[0_0_12px_#00f2ff]"
-              />
+              <Radar className="w-10 h-10 text-electric relative z-10 drop-shadow-[0_0_10px_#00f2ff] animate-pulse" />
             </div>
           </div>
-          <div>
+          <div className="relative z-10">
             <h1 className="text-4xl font-black tracking-tighter text-white flex items-baseline gap-2 group-hover:text-electric transition-colors">
               SCAM<span className="text-electric">SCANNER</span>
               <div className="flex flex-col">
@@ -265,7 +275,7 @@ export default function App() {
                 <span className="text-[7px] text-malicious/80 font-mono animate-pulse tracking-[0.1em] mt-1">THREAT_DETECTION: GLOBAL_ACTIVE</span>
               </div>
             </h1>
-            <p className="text-[11px] text-white/40 uppercase tracking-[0.55em] font-black pl-1 mt-1">Forensic Intelligence System</p>
+            <p className="text-[11px] text-white/40 uppercase tracking-[0.55em] font-black pl-1 mt-1">Advanced Email and Web Analyzer</p>
           </div>
         </div>
 
@@ -372,7 +382,7 @@ export default function App() {
               <div className="space-y-6">
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative p-4 bg-electric/10 rounded-2xl border border-electric/30">
-                    <ShieldAlert className="w-8 h-8 text-electric" />
+                    <Radar className="w-8 h-8 text-electric" />
                     <motion.div 
                       animate={{ y: [-15, 15, -15] }}
                       transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
