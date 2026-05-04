@@ -12,6 +12,7 @@ import { ToolSelector } from "./components/ForensicTool";
 import { motion, AnimatePresence } from "motion/react";
 import { Shield, Lock, Cpu, Mail, Key, Radar, Search, Fingerprint, Activity } from "lucide-react";
 import { PulseIndicator } from "./components/ui/Primitives";
+import { ConfirmModal } from "./components/ui/ConfirmModal";
 import { auth, db, googleProvider } from "@/src/lib/firebase";
 import { 
   onAuthStateChanged, 
@@ -34,6 +35,7 @@ import {
   getDocFromServer
 } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "@/src/lib/firestoreUtils";
+import { sendPasswordResetEmail } from "firebase/auth";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -47,7 +49,10 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState("");
   const [portalStatus, setPortalStatus] = useState({ ok: true, status: "OPERATIONAL" });
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isClearHistoryConfirmOpen, setIsClearHistoryConfirmOpen] = useState(false);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -135,8 +140,11 @@ export default function App() {
 
   const clearHistory = async () => {
     if (!user) return;
-    if (!window.confirm("ARE YOU SURE YOU WANT TO PURGE ALL CASE RECORDS? THIS ACTION IS IRREVERSIBLE.")) return;
+    setIsClearHistoryConfirmOpen(true);
+  };
 
+  const confirmClearHistory = async () => {
+    if (!user) return;
     setLoading(true);
     const path = `users/${user.uid}/cases`;
     try {
@@ -196,6 +204,26 @@ export default function App() {
       setIsLoginModalOpen(false);
       setEmail("");
       setPassword("");
+      setAuthSuccess("");
+    } catch (error: any) {
+      setAuthError(error.message);
+      setAuthSuccess("");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setAuthError("Email address required for key recovery.");
+      return;
+    }
+    setAuthError("");
+    setAuthSuccess("");
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setAuthSuccess("Recovery protocol initiated. Check your inbox.");
     } catch (error: any) {
       setAuthError(error.message);
     } finally {
@@ -216,8 +244,11 @@ export default function App() {
     }
   };
 
-  const logout = async () => {
-    if (!window.confirm("ARE YOU SURE YOU WANT TO DEAUTHORIZE THIS SESSION?")) return;
+  const logout = () => {
+    setIsLogoutConfirmOpen(true);
+  };
+
+  const confirmLogout = async () => {
     try {
       await signOut(auth);
     } catch (error) {
@@ -453,7 +484,25 @@ export default function App() {
                   >
                     {loading ? "PROCESSING..." : isSignUp ? "CREATE IDENTITY" : "AUTHORIZE SESSION"}
                   </button>
+                  
+                  {!isSignUp && (
+                    <div className="flex justify-center">
+                      <button 
+                        type="button"
+                        onClick={handleForgotPassword}
+                        className="text-[9px] font-bold text-white/20 hover:text-white/60 transition-colors uppercase tracking-widest"
+                      >
+                        FORGOT YOUR PASSWORD? RESET IT HERE
+                      </button>
+                    </div>
+                  )}
                 </form>
+
+                {authSuccess && (
+                  <p className="text-[9px] text-legit font-mono bg-legit/10 p-2 border border-legit/20 uppercase">
+                    SYSTEM_MSG: {authSuccess.toUpperCase()}
+                  </p>
+                )}
 
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
@@ -511,6 +560,27 @@ export default function App() {
           <span className="text-white/40">SYSTEM_UPTIME: 99.98%</span>
         </div>
       </footer>
+
+      {/* Confirmation Modals */}
+      <ConfirmModal
+        isOpen={isLogoutConfirmOpen}
+        onClose={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={confirmLogout}
+        title="Session Deauth"
+        message="Are you sure you want to deauthorize this investigator session? You will need to re-verify your identity to access restricted forensic data."
+        confirmLabel="Deauthorize"
+        cancelLabel="Stay Active"
+      />
+
+      <ConfirmModal
+        isOpen={isClearHistoryConfirmOpen}
+        onClose={() => setIsClearHistoryConfirmOpen(false)}
+        onConfirm={confirmClearHistory}
+        title="DATA PURGE"
+        message="ARE YOU SURE YOU WANT TO PURGE ALL CASE RECORDS? THIS ACTION IS IRREVERSIBLE AND ALL FORENSIC HISTORY WILL BE PERMANENTLY DELETED FROM THE SERVER."
+        confirmLabel="PURGE RECORDS"
+        cancelLabel="ABORT"
+      />
     </div>
   );
 }
