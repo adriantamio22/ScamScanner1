@@ -46,8 +46,31 @@ You analyze:
 3. IP Analysis: VPN/Proxy/Tor exit nodes, abuse confidence scores, geolocation/ISP data.
 4. Website Checker: URL safety, SSL certificates, phishing patterns, domain age/reputation.
 5. EML Investigator: raw email headers, spoofed From addresses, Reply-To mismatches, embedded link risk.
+6. HIBP Integration: Checking for known data breaches to assess identity theft risk.
 
 Always respond with ONLY the JSON object, no extra text.`;
+
+async function callHIBP(email: string): Promise<any[]> {
+  const apiKey = process.env.HIBP_API_KEY;
+  if (!apiKey) return [];
+
+  try {
+    const res = await fetch(`https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`, {
+      headers: {
+        "hibp-api-key": apiKey,
+        "user-agent": "ScamScanner-Forensic-Lab"
+      }
+    });
+
+    if (res.status === 404) return [];
+    if (!res.ok) return [];
+
+    return await res.json() as any[];
+  } catch (err) {
+    console.error("HIBP Error:", err);
+    return [];
+  }
+}
 
 async function callGroq(userMessage: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -188,8 +211,22 @@ async function startServer() {
       }
 
       try {
+        let hibpContext = "";
+        if ((type === "EMAIL" || type === "EMAIL_ADDRESS") && input) {
+          try {
+            const breaches = await callHIBP(input);
+            if (breaches.length > 0) {
+              hibpContext = `\n[FORENSIC_DATA: HIBP_DATA_LEAK_DETECTED]\nThis identity has been compromised in ${breaches.length} breaches: ${breaches.slice(0, 5).map((b: any) => b.Name).join(", ")}${breaches.length > 5 ? " and others" : ""}.`;
+            } else {
+              hibpContext = `\n[FORENSIC_DATA: HIBP_CLEAN]\nNo known breaches found in public HIBP database for this identity.`;
+            }
+          } catch (e) {
+            console.warn("HIBP check failed", e);
+          }
+        }
+
         const rawJson = await callAI(
-          `Analyze this ${type} input: ${input}. Perform a deep forensic simulation.`
+          `Analyze this ${type} input: ${input}. Perform a deep forensic simulation.${hibpContext}`
         );
         const data = JSON.parse(rawJson);
         return res.json({ success: true, data, remaining });

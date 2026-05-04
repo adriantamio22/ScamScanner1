@@ -37,6 +37,39 @@ import {
 import { handleFirestoreError, OperationType } from "@/src/lib/firestoreUtils";
 import { sendPasswordResetEmail } from "firebase/auth";
 
+// Helper to map Firebase Auth errors to theme-friendly messages
+const formatAuthError = (error: any) => {
+  const code = error.code || "";
+  switch (code) {
+    case 'auth/user-not-found':
+      return "IDENT_FAILURE: Investigator profile not found in forensic database.";
+    case 'auth/wrong-password':
+      return "ACCESS_DENIED: Invalid authorization key provided.";
+    case 'auth/invalid-email':
+      return "IDENT_PROTOCOL_ERROR: Malformed mailbox address.";
+    case 'auth/email-already-in-use':
+      return "IDENT_CONFLICT: Identity already registered in database.";
+    case 'auth/user-disabled':
+      return "SECURITY_BREACH: Access revoked. Profile decommissioned.";
+    case 'auth/too-many-requests':
+      return "PROTECTION_LOCK: Brute-force protection active. Try later.";
+    case 'auth/invalid-credential':
+      return "ACCESS_DENIED: Invalid investigator credentials or profile mismatch.";
+    case 'auth/operation-not-allowed':
+      return "PROTOCOL_DISABLED: Email auth protocol not enabled in lab console.";
+    case 'auth/weak-password':
+      return "SECURITY_WARNING: Password strength below forensic standard.";
+    case 'auth/account-exists-with-different-credential':
+      return "IDENT_CONFLICT: Account linked to another auth provider (Google).";
+    case 'auth/user-mismatch':
+      return "PROTOCOL_ERROR: Credential mismatch detected.";
+    default:
+      // Remove the prefix "Firebase: Error (auth/..." from the default message if possible
+      const cleanMsg = error.message?.replace(/Firebase: Error \(auth\//g, '').replace(/\)\./g, '') || "Unknown auth error.";
+      return `SYSTEM_ERROR: ${cleanMsg}`;
+  }
+};
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -206,7 +239,7 @@ export default function App() {
       setPassword("");
       setAuthSuccess("");
     } catch (error: any) {
-      setAuthError(error.message);
+      setAuthError(formatAuthError(error));
       setAuthSuccess("");
     } finally {
       setLoading(false);
@@ -222,10 +255,12 @@ export default function App() {
     setAuthSuccess("");
     setLoading(true);
     try {
+      // NOTE: Firebase sendPasswordResetEmail succeeds even if email doesn't exist 
+      // due to 'Email Enumeration Protection' being enabled in the console.
       await sendPasswordResetEmail(auth, email);
-      setAuthSuccess("Recovery protocol initiated. Check your inbox.");
+      setAuthSuccess("Recovery protocol sent. If this identity exists in our records, a link will arrive shortly.");
     } catch (error: any) {
-      setAuthError(error.message);
+      setAuthError(formatAuthError(error));
     } finally {
       setLoading(false);
     }
@@ -238,7 +273,7 @@ export default function App() {
       await signInWithPopup(auth, googleProvider);
       setIsLoginModalOpen(false);
     } catch (error: any) {
-      setAuthError(error.message);
+      setAuthError(formatAuthError(error));
     } finally {
       setLoading(false);
     }
