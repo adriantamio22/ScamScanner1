@@ -1,0 +1,108 @@
+import { GoogleGenAI, Type } from "@google/genai";
+
+const KEYS = [
+  process.env.GEMINI_API_KEY_1,
+  process.env.GEMINI_API_KEY_2,
+  process.env.GEMINI_API_KEY_3,
+  process.env.GEMINI_API_KEY_4,
+  process.env.GEMINI_API_KEY_5,
+].filter((k): k is string => Boolean(k));
+
+const SYSTEM_PROMPT = `You are the core engine of ScamScanner, a "Bento Grid" Digital Forensic Lab.
+Your task is to analyze inputs for three specialized tools:
+1. Mailbox Checker: Analyzes email safety, MX/SPF/DMARC records, and malicious attachments/links.
+2. Email Address Verifier: Checks syntax, mailbox existence, disposable/burner status, and spoofing reputation.
+3. IP Analysis: Detects VPN/Proxy/Tor exit nodes, abuse confidence scores, and geolocation/ISP data.
+4. Website Checker: Emulates VirusTotal/Google Safe Browsing. Analyzes URL safety, SSL certificates, phishing patterns, and domain age/reputation.
+5. EML Investigator: Analyzes raw email (.eml) source code. Extracts headers, identifies spoofed "From" addresses, analyzes "Reply-To" mismatches, and evaluates embedded link/attachment risk.
+
+For any input, you must provide:
+- A Legitimacy Percentage (0-100%).
+- A Verdict: MALICIOUS_THREAT, SUSPICIOUS_ACTIVITY, or LEGIT_SIGNAL.
+- An Executive Summary (concise forensic overview).
+- A list of Forensic Signals (Evidence bits with severity: CRITICAL, WARNING, INFO).
+
+Use your vast intelligence to simulate real-world forensic tool outputs. If an input is clearly a test or placeholder, still provide a realistic, professional response.`;
+
+const RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    legitimacyPercentage: { type: Type.NUMBER },
+    verdict: { type: Type.STRING, enum: ["MALICIOUS_THREAT", "SUSPICIOUS_ACTIVITY", "LEGIT_SIGNAL"] },
+    executiveSummary: { type: Type.STRING },
+    forensicSignals: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          severity: { type: Type.STRING, enum: ["CRITICAL", "WARNING", "INFO"] },
+          description: { type: Type.STRING },
+        },
+        required: ["name", "severity", "description"],
+      },
+    },
+  },
+  required: ["legitimacyPercentage", "verdict", "executiveSummary", "forensicSignals"],
+};
+
+function isQuotaError(err: any): boolean {
+  return (
+    err.message?.includes("429") ||
+    err.message?.includes("RESOURCE_EXHAUSTED") ||
+    err.message?.includes("credits are depleted")
+  );
+}
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!KEYS.length) return res.status(500).json({ error: "No API keys configured on server" });
+
+  const { action, type, input } = req.body ?? {};
+
+  if (action === "status") {
+    for (const key of KEYS) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: key });
+        await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          config: { maxOutputTokens: 1 },
+        });
+        return res.json({ ok: true, status: "OPERATIONAL" });
+      } catch (err: any) {
+        if (isQuotaError(err)) continue;
+        return res.json({ ok: false, status: "API_ERROR" });
+      }
+    }
+    return res.json({ ok: false, status: "QUOTA_EXHAUSTED" });
+  }
+
+  if (action === "analyze") {
+    for (const key of KEYS) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: key });
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `Analyze this ${type} input: ${input}. Input content might be raw email headers/body, an IP address, a domain, or an email address. Perform a deep forensic simulation.`,
+          config: {
+            systemInstruction: SYSTEM_PROMPT,
+            responseMimeType: "application/json",
+            responseSchema: RESPONSE_SCHEMA,
+          },
+        });
+        const rawJson = response.text?.trim();
+        if (!rawJson) throw new Error("Empty response from intelligence engine.");
+        return res.json({ success: true, data: JSON.parse(rawJson) });
+      } catch (err: any) {
+        if (isQuotaError(err)) continue;
+        console.error("Gemini Error:", err);
+        // If it's the last key and it failed with something else, we should let the loop continue or throw
+        continue; 
+      }
+    }
+    return res.status(429).json({ error: "QUOTA_EXHAUSTED" });
+  }
+
+  return res.status(400).json({ error: "Invalid action" });
+}

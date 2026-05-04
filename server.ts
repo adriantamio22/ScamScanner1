@@ -77,7 +77,7 @@ async function startServer() {
         try {
           const ai = new GoogleGenAI({ apiKey: key });
           await ai.models.generateContent({
-            model: "gemini-flash-latest",
+            model: "gemini-3-flash-preview",
             contents: [{ role: "user", parts: [{ text: "hi" }] }],
             config: { maxOutputTokens: 1 },
           });
@@ -95,7 +95,7 @@ async function startServer() {
         try {
           const ai = new GoogleGenAI({ apiKey: key });
           const response = await ai.models.generateContent({
-            model: "gemini-flash-latest",
+            model: "gemini-3-flash-preview",
             contents: `Analyze this ${type} input: ${input}. Input content might be raw email headers/body, an IP address, a domain, or an email address. Perform a deep forensic simulation.`,
             config: {
               systemInstruction: SYSTEM_PROMPT,
@@ -109,7 +109,6 @@ async function startServer() {
         } catch (err: any) {
           if (isQuotaError(err)) continue;
           console.error("Gemini Error:", err);
-          return res.status(500).json({ error: err.message || "Analysis failed" });
         }
       }
       return res.status(429).json({ error: "QUOTA_EXHAUSTED" });
