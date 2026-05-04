@@ -59,11 +59,11 @@ Analyze the given input and respond ONLY with a valid JSON object in this exact 
 }
 
 You analyze:
-1. Mailbox Checker: email safety, MX/SPF/DMARC records, malicious attachments/links.
-2. Email Address Verifier: syntax, mailbox existence, disposable/burner status, spoofing reputation.
-3. IP Analysis: VPN/Proxy/Tor exit nodes, abuse confidence scores, geolocation/ISP data.
-4. Website Checker: URL safety, SSL certificates, phishing patterns, domain age/reputation.
-5. EML Investigator: raw email headers, spoofed From addresses, Reply-To mismatches, embedded link risk.
+1. Domain Lookup: Comprehensive domain and URL intelligence. Performs deep checks on safety, DNS records (MX/SPF/DMARC/BIMI), domain age, SSL certificate chain, and reputation. Imagine a fusion of VirusTotal and MXToolbox.
+2. Email Address Verifier: Deep verification of email identities. Checks syntax, mailbox existence, disposable/burner status, and reputation.
+3. IP Analysis: Forensic IP investigation. Detections for VPN, Proxy, Tor exit nodes, data center IPs, abuse confidence scores, and geolocation.
+4. Website Checker: In-depth URL and content scanning for phishing, malware, and deceptive redirection patterns.
+5. EML Investigator: Advanced behavioral analysis of raw email sources (.eml). Mimics Abnormal Security by detecting identity deception, typosquatting (homoglyph attacks), suspicious structural anomalies, and business email compromise (BEC) signals.
 
 Always respond with ONLY the JSON object, no extra text.`;
 

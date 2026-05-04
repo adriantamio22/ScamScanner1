@@ -6,7 +6,7 @@
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
-        "type": { "type": "string", "enum": ["MAILBOX", "EMAIL", "IP", "WEBSITE", "EML"] },
+        "type": { "type": "string", "enum": ["LOOKUP", "EMAIL", "IP", "WEBSITE", "EML"] },
         "input": { "type": "string" },
         "verdict": { "type": "string", "enum": ["MALICIOUS_THREAT", "SUSPICIOUS_ACTIVITY", "LEGIT_SIGNAL"] },
         "legitimacyPercentage": { "type": "number" },

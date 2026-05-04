@@ -1,4 +1,4 @@
-export type ToolType = 'MAILBOX' | 'EMAIL' | 'IP' | 'WEBSITE' | 'EML';
+export type ToolType = 'LOOKUP' | 'EMAIL' | 'IP' | 'WEBSITE' | 'EML';
 
 export type Verdict = 'MALICIOUS_THREAT' | 'SUSPICIOUS_ACTIVITY' | 'LEGIT_SIGNAL';
 

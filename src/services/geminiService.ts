@@ -15,7 +15,7 @@ export async function checkApiStatus(): Promise<{ ok: boolean; status: string }>
 
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
   let hibpContext = "";
-  if (type === "EMAIL" || type === "MAILBOX") {
+  if (type === "EMAIL" || type === "LOOKUP") {
     try {
       const res = await fetch("/api/gemini", {
         method: "POST",

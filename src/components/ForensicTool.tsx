@@ -10,11 +10,11 @@ interface ToolSelectorProps {
 
 const TOOLS = [
   {
-    type: 'MAILBOX' as ToolType,
-    label: 'Mailbox Checker',
-    icon: Mail,
-    description: 'VirusTotal/MXLookup simulation. Analyzes safety, MX/SPF records, and malicious attachments.',
-    placeholder: 'Enter domain or attachment hash...'
+    type: 'LOOKUP' as ToolType,
+    label: 'Domain Lookup',
+    icon: Search,
+    description: 'Comprehensive domain and URL intelligence. Analyzes safety, DNS records (MX/SPF/DMARC), and reputation, similar to VirusTotal.',
+    placeholder: 'Enter domain or entity to lookup...'
   },
   {
     type: 'EMAIL' as ToolType,
@@ -34,20 +34,20 @@ const TOOLS = [
     type: 'WEBSITE' as ToolType,
     label: 'Web Scanner',
     icon: MousePointer2,
-    description: 'VirusTotal/SafeBrowsing simulation. Analyzes URL safety, SSL certificates, and phishing patterns.',
+    description: 'URL safety, SSL certificates, and forensic phishing patterns.',
     placeholder: 'Enter URL or domain to scan (e.g. example.com)...'
   },
   {
     type: 'EML' as ToolType,
     label: 'EML Forensic',
     icon: FileSearch,
-    description: 'Forensic analysis of raw email source (.eml). Extracts headers and detects spoofing.',
+    description: 'Abnormal Security behavior analysis. Analyzes email structure, identity deception, typosquatting, and attack patterns.',
     placeholder: 'Drag EML file here or enter raw source...'
   }
 ];
 
 export function ToolSelector({ onScan, loading }: ToolSelectorProps) {
-  const [activeTool, setActiveTool] = useState<ToolType>('MAILBOX');
+  const [activeTool, setActiveTool] = useState<ToolType>('LOOKUP');
   const [inputValue, setInputValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
