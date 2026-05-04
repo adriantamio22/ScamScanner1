@@ -234,32 +234,38 @@ export default function App() {
       >
         <div className="flex items-center gap-4 group cursor-pointer" onClick={() => window.location.reload()}>
           <div className="relative">
-            <div className="absolute -inset-2 bg-electric/20 blur-lg rounded-full group-hover:bg-electric/40 transition-all"></div>
-            <div className="relative p-3 bg-black border-2 border-electric/40 rounded-xl group-hover:border-electric transition-all shadow-[0_0_15px_rgba(0,242,255,0.1)] group-hover:shadow-[0_0_20px_rgba(0,242,255,0.2)]">
+            <div className="absolute -inset-4 bg-electric/20 blur-2xl rounded-full group-hover:bg-electric/40 transition-all duration-700 animate-pulse"></div>
+            <div className="relative p-4 bg-black/80 backdrop-blur-xl border-2 border-electric/40 rounded-2xl group-hover:border-electric group-hover:scale-105 transition-all shadow-[0_0_25px_rgba(0,242,255,0.2)] group-hover:shadow-[0_0_40px_rgba(0,242,255,0.4)] overflow-hidden">
+              <div className="absolute inset-0 opacity-20 group-hover:opacity-40 transition-opacity">
+                <Radar className="w-full h-full text-electric animate-[spin_10s_linear_infinite]" />
+              </div>
               <div className="absolute inset-0 flex items-center justify-center">
                  <motion.div 
-                   animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }}
-                   transition={{ duration: 2, repeat: Infinity }}
-                   className="w-10 h-10 bg-electric/5 rounded-full"
+                   animate={{ scale: [1, 1.5, 1], opacity: [0.3, 0.7, 0.3] }}
+                   transition={{ duration: 3, repeat: Infinity }}
+                   className="w-12 h-12 bg-electric/10 rounded-full"
                  />
               </div>
-              <ShieldAlert className="w-8 h-8 text-electric relative z-10" />
+              <ShieldAlert className="w-9 h-9 text-electric relative z-10 drop-shadow-[0_0_10px_#00f2ff]" />
               <motion.div 
-                animate={{ y: [-12, 12, -12] }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                className="absolute left-0 right-0 h-[1px] bg-electric/50 z-20 shadow-[0_0_8px_#00f2ff]"
+                animate={{ y: [-20, 20, -20] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+                className="absolute left-0 right-0 h-[2px] bg-electric/60 z-20 shadow-[0_0_12px_#00f2ff]"
               />
             </div>
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tighter text-white flex items-center gap-2 group-hover:text-electric transition-colors">
+            <h1 className="text-4xl font-black tracking-tighter text-white flex items-baseline gap-2 group-hover:text-electric transition-colors">
               SCAM<span className="text-electric">SCANNER</span>
               <div className="flex flex-col">
-                <span className="text-[10px] px-1.5 py-0.5 border border-electric/30 text-electric rounded uppercase tracking-[0.2em] font-mono group-hover:border-electric transition-colors leading-none mb-1">CORE_v4</span>
-                <span className="text-[7px] text-malicious/60 font-mono animate-pulse">THREAT_DETECTION: ON</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] px-1.5 py-0.5 bg-electric/10 border border-electric/30 text-electric rounded uppercase tracking-[0.2em] font-mono group-hover:border-electric transition-colors leading-none">CORE_v4</span>
+                  <Activity className="w-3 h-3 text-electric animate-pulse" />
+                </div>
+                <span className="text-[7px] text-malicious/80 font-mono animate-pulse tracking-[0.1em] mt-1">THREAT_DETECTION: GLOBAL_ACTIVE</span>
               </div>
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-[0.43em] font-bold">Digital Forensic Intelligence</p>
+            <p className="text-[11px] text-white/40 uppercase tracking-[0.55em] font-black pl-1 mt-1">Forensic Intelligence System</p>
           </div>
         </div>
 
