@@ -3,24 +3,43 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import "dotenv/config";
 
+const RATE_LIMIT = 5;
+const RATE_WINDOW_MS = 60 * 60 * 1000;
+const ipMap = new Map<string, { count: number; resetAt: number }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of ipMap.entries()) {
+    if (now > record.resetAt) ipMap.delete(ip);
+  }
+}, 10 * 60 * 1000);
+
+function checkRateLimit(ip: string): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Date.now();
+  const record = ipMap.get(ip);
+  if (!record || now > record.resetAt) {
+    const resetAt = now + RATE_WINDOW_MS;
+    ipMap.set(ip, { count: 1, resetAt });
+    return { allowed: true, remaining: RATE_LIMIT - 1, resetAt };
+  }
+  if (record.count >= RATE_LIMIT) {
+    return { allowed: false, remaining: 0, resetAt: record.resetAt };
+  }
+  record.count++;
+  return { allowed: true, remaining: RATE_LIMIT - record.count, resetAt: record.resetAt };
+}
+
 async function callHIBP(email: string): Promise<any[]> {
   const apiKey = process.env.HIBP_API_KEY;
   if (!apiKey) return [];
-
   try {
-    const res = await fetch(`https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`, {
-      headers: {
-        "hibp-api-key": apiKey,
-        "user-agent": "ScamScanner-Forensic-Lab"
-      }
-    });
-
-    if (res.status === 404) return [];
+    const res = await fetch(
+      `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`,
+      { headers: { "hibp-api-key": apiKey, "user-agent": "ScamScanner-Forensic-Lab" } }
+    );
     if (!res.ok) return [];
-
     return await res.json() as any[];
-  } catch (err) {
-    console.error("HIBP Error:", err);
+  } catch {
     return [];
   }
 }
@@ -42,61 +61,38 @@ You analyze:
 3. IP Analysis: VPN/Proxy/Tor exit nodes, abuse confidence scores, geolocation/ISP data.
 4. Website Checker: URL safety, SSL certificates, phishing patterns, domain age/reputation.
 5. EML Investigator: raw email headers, spoofed From addresses, Reply-To mismatches, embedded link risk.
-`;
 
-async function callPuterAI(userMessage: string): Promise<string> {
-  const apiKey = process.env.PUTER_API_KEY;
-  if (!apiKey) throw new Error("PUTER_API_KEY is not configured");
+Always respond with ONLY the JSON object, no extra text.`;
 
-  const res = await fetch("https://api.puter.com/v1/ai/chat", {
+async function callGroq(message: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY is not configured");
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: "llama-3.1-8b-instant",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userMessage },
+        { role: "user", content: message },
       ],
-      stream: false,
+      response_format: { type: "json_object" },
+      max_tokens: 1024,
+      temperature: 0.3,
     }),
   });
 
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error?.message || `Puter API error: ${res.status}`);
+    throw new Error(err.error?.message || `Groq error: ${res.status}`);
   }
 
   const data = await res.json() as any;
-  return data.message.content;
-}
-
-async function callGemini(userMessage: string): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: userMessage }] }],
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      generationConfig: {
-        responseMimeType: "application/json",
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || `Gemini API error: ${res.status}`);
-  }
-
-  const data = await res.json() as any;
-  return data.candidates[0].content.parts[0].text;
+  return data.choices[0].message.content;
 }
 
 async function startServer() {
@@ -109,75 +105,12 @@ async function startServer() {
   app.post("/api/gemini", async (req, res) => {
     const { action, type, input } = req.body ?? {};
 
-    if (action === "analyze") {
-      try {
-        let hibpContext = "";
-        if (type === "MAILBOX" || type === "EMAIL") {
-          try {
-            const breaches = await callHIBP(input);
-            if (breaches.length > 0) {
-              hibpContext = `\n[FORENSIC_DATA: HIBP_DATA_LEAK_DETECTED]\nThis identity has been compromised in ${breaches.length} breaches: ${breaches.slice(0, 5).map((b: any) => b.Name).join(", ")}${breaches.length > 5 ? " and others" : ""}.`;
-            } else {
-              hibpContext = `\n[FORENSIC_DATA: HIBP_CLEAN]\nNo known breaches found in public HIBP database for this identity.`;
-            }
-          } catch (e) {
-            console.warn("HIBP check failed", e);
-          }
-        }
-
-        const prompt = `Analyze this ${type} input: ${input}. Perform a deep forensic simulation.${hibpContext}`;
-        
-        let result = "";
-        const errors: string[] = [];
-
-        // Try Puter if configured
-        if (process.env.PUTER_API_KEY) {
-          try {
-            result = await callPuterAI(prompt);
-          } catch (err: any) {
-            console.warn("Puter AI failed, attempting fallback:", err.message);
-            errors.push(`Puter: ${err.message}`);
-          }
-        }
-
-        // Fallback to Gemini if Puter failed or wasn't configured
-        if (!result && process.env.GEMINI_API_KEY) {
-          try {
-            result = await callGemini(prompt);
-          } catch (err: any) {
-            console.warn("Gemini AI failed:", err.message);
-            errors.push(`Gemini: ${err.message}`);
-          }
-        }
-
-        if (!result) {
-          throw new Error(`AI_PROVIDER_FAILURE: ${errors.join(" | ") || "No providers configured"}`);
-        }
-
-        let cleanJson = result.trim();
-        if (cleanJson.includes("```json")) {
-          cleanJson = cleanJson.split("```json")[1].split("```")[0].trim();
-        } else if (cleanJson.includes("```")) {
-          cleanJson = cleanJson.split("```")[1].split("```")[0].trim();
-        }
-
-        const data = JSON.parse(cleanJson);
-        return res.json({ success: true, data });
-      } catch (err: any) {
-        console.error("Analysis Error:", err);
-        return res.status(500).json({ error: err.message || "Analysis failed" });
-      }
-    }
-
     if (action === "hibp") {
       try {
         const breaches = await callHIBP(input);
-        let hibpContext = "";
-        if (breaches.length > 0) {
-          hibpContext = `\n[FORENSIC_DATA: HIBP_DATA_LEAK_DETECTED]\nThis identity has been compromised in ${breaches.length} breaches: ${breaches.slice(0, 5).map((b: any) => b.Name).join(", ")}${breaches.length > 5 ? " and others" : ""}.`;
-        } else {
-          hibpContext = `\n[FORENSIC_DATA: HIBP_CLEAN]\nNo known breaches found in public HIBP database for this identity.`;
-        }
+        const hibpContext = breaches.length > 0
+          ? `\n[HIBP: ${breaches.length} breach(es) found: ${breaches.slice(0, 5).map((b: any) => b.Name).join(", ")}${breaches.length > 5 ? " and more" : ""}]`
+          : `\n[HIBP: No known breaches found]`;
         return res.json({ context: hibpContext });
       } catch (err: any) {
         console.error("HIBP Error:", err);
@@ -186,7 +119,33 @@ async function startServer() {
     }
 
     if (action === "status") {
-      return res.json({ ok: true, status: "OPERATIONAL" });
+      try {
+        await callGroq("hi");
+        return res.json({ ok: true, status: "OPERATIONAL" });
+      } catch (err: any) {
+        return res.json({ ok: false, status: "API_ERROR", message: err.message });
+      }
+    }
+
+    if (action === "analyze") {
+      const ip = (req.headers["x-forwarded-for"] as string) || req.ip || "unknown";
+      const { allowed, remaining, resetAt } = checkRateLimit(ip);
+
+      if (!allowed) {
+        const minutesLeft = Math.ceil((resetAt - Date.now()) / 60000);
+        return res.status(429).json({
+          error: "RATE_LIMITED",
+          message: `Scan limit reached (${RATE_LIMIT} scans/hour). Try again in ${minutesLeft} minute${minutesLeft !== 1 ? "s" : ""}.`,
+        });
+      }
+
+      try {
+        const rawJson = await callGroq(`Analyze this ${type} input: ${input}. Perform a deep forensic simulation.`);
+        return res.json({ success: true, data: JSON.parse(rawJson), remaining });
+      } catch (err: any) {
+        console.error("Analysis Error:", err);
+        return res.status(500).json({ error: err.message || "Analysis failed" });
+      }
     }
 
     return res.status(400).json({ error: "Invalid action" });
