@@ -80,6 +80,82 @@ async function callGroq(userMessage: string): Promise<string> {
   return data.choices[0].message.content;
 }
 
+async function callGemini(userMessage: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_1;
+  if (!apiKey) throw new Error("Missing GEMINI_API_KEY or GROQ_API_KEY. Please configure them in your environment settings.");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: userMessage }] }],
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      generationConfig: {
+        responseMimeType: "application/json",
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Gemini API error: ${res.status}`);
+  }
+
+  const data = await res.json() as any;
+  return data.candidates[0].content.parts[0].text;
+}
+
+async function callPuterAI(userMessage: string): Promise<string> {
+  const apiKey = process.env.PUTER_API_KEY;
+  if (!apiKey) throw new Error("PUTER_API_KEY is not configured");
+
+  const res = await fetch("https://api.puter.com/v1/ai/chat", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userMessage },
+      ],
+      stream: false,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Puter API error: ${res.status}`);
+  }
+
+  const data = await res.json() as any;
+  return data.message.content;
+}
+
+async function callAI(userMessage: string): Promise<string> {
+  // Try Groq First
+  if (process.env.GROQ_API_KEY) {
+    try {
+      return await callGroq(userMessage);
+    } catch (err) {
+      console.warn("Groq failed, falling back to Gemini:", err);
+    }
+  }
+
+  // Try Gemini
+  try {
+    return await callGemini(userMessage);
+  } catch (err) {
+    console.warn("Gemini failed, falling back to Puter:", err);
+  }
+
+  // Final fallback to Puter
+  return await callPuterAI(userMessage);
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -92,7 +168,7 @@ async function startServer() {
 
     if (action === "status") {
       try {
-        await callGroq("hi");
+        await callAI("hi");
         return res.json({ ok: true, status: "OPERATIONAL" });
       } catch (err: any) {
         return res.json({ ok: false, status: "API_ERROR", message: err.message });
@@ -112,7 +188,7 @@ async function startServer() {
       }
 
       try {
-        const rawJson = await callGroq(
+        const rawJson = await callAI(
           `Analyze this ${type} input: ${input}. Perform a deep forensic simulation.`
         );
         const data = JSON.parse(rawJson);
