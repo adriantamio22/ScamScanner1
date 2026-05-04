@@ -54,11 +54,44 @@ function isQuotaError(err: any): boolean {
   );
 }
 
+// In-memory rate limiting (Note: reset on cold starts)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_COUNT = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function checkRateLimit(ip: string): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  if (!record || now > record.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true, remaining: RATE_LIMIT_COUNT - 1 };
+  }
+
+  if (record.count >= RATE_LIMIT_COUNT) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  record.count += 1;
+  return { allowed: true, remaining: RATE_LIMIT_COUNT - record.count };
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   if (!KEYS.length) return res.status(500).json({ error: "No API keys configured on server" });
 
   const { action, type, input } = req.body ?? {};
+  
+  // Get client IP for rate limiting
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "anonymous";
+  const { allowed } = checkRateLimit(ip as string);
+
+  if (action === "analyze" && !allowed) {
+    return res.status(429).json({ 
+      error: "RATE_LIMIT_EXHAUSTED", 
+      message: "You have reached the limit of 5 scans per hour. Please wait before trying again." 
+    });
+  }
 
   if (action === "status") {
     for (const key of KEYS) {
