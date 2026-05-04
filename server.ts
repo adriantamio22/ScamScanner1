@@ -64,18 +64,26 @@ You analyze:
 
 Always respond with ONLY the JSON object, no extra text.`;
 
-async function callGroq(message: string): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("GROQ_API_KEY is not configured");
+function isRateLimitError(err: any): boolean {
+  return (
+    err.message?.includes("429") ||
+    err.message?.includes("rate limit") ||
+    err.message?.includes("Rate limit") ||
+    err.message?.includes("quota") ||
+    err.message?.includes("TPD") ||
+    err.message?.includes("TPM")
+  );
+}
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+async function callAI(url: string, apiKey: string, model: string, message: string): Promise<string> {
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "llama-3.1-8b-instant",
+      model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: message },
@@ -88,11 +96,40 @@ async function callGroq(message: string): Promise<string> {
 
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error?.message || `Groq error: ${res.status}`);
+    throw new Error(err.error?.message || `API error ${res.status}`);
   }
 
   const data = await res.json() as any;
   return data.choices[0].message.content;
+}
+
+async function callWithFallback(message: string): Promise<string> {
+  const groqKey = process.env.GROQ_API_KEY;
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+
+  if (groqKey) {
+    try {
+      return await callAI(
+        "https://api.groq.com/openai/v1/chat/completions",
+        groqKey,
+        "llama-3.1-8b-instant",
+        message
+      );
+    } catch (err: any) {
+      if (!isRateLimitError(err)) throw err;
+    }
+  }
+
+  if (openrouterKey) {
+    return await callAI(
+      "https://openrouter.ai/api/v1/chat/completions",
+      openrouterKey,
+      "meta-llama/llama-3.1-8b-instruct:free",
+      message
+    );
+  }
+
+  throw new Error("No AI providers available. Check your API keys in Vercel settings.");
 }
 
 async function startServer() {
@@ -120,7 +157,7 @@ async function startServer() {
 
     if (action === "status") {
       try {
-        await callGroq("hi");
+        await callWithFallback("hi");
         return res.json({ ok: true, status: "OPERATIONAL" });
       } catch (err: any) {
         return res.json({ ok: false, status: "API_ERROR", message: err.message });
@@ -140,7 +177,9 @@ async function startServer() {
       }
 
       try {
-        const rawJson = await callGroq(`Analyze this ${type} input: ${input}. Perform a deep forensic simulation.`);
+        const rawJson = await callWithFallback(
+          `Analyze this ${type} input: ${input}. Perform a deep forensic simulation.`
+        );
         return res.json({ success: true, data: JSON.parse(rawJson), remaining });
       } catch (err: any) {
         console.error("Analysis Error:", err);
