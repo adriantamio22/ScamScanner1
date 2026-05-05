@@ -34,12 +34,14 @@ export function VerdictBadge({ verdict }: BadgeProps) {
     MALICIOUS_THREAT: "bg-malicious/20 text-malicious border-malicious/30",
     SUSPICIOUS_ACTIVITY: "bg-suspicious/20 text-suspicious border-suspicious/30",
     LEGIT_SIGNAL: "bg-legit/20 text-legit border-legit/30",
+    NOT_FOUND: "bg-white/10 text-white/40 border-white/20",
   };
 
   const labels = {
     MALICIOUS_THREAT: "MALICIOUS THREAT",
     SUSPICIOUS_ACTIVITY: "SUSPICIOUS ACTIVITY",
     LEGIT_SIGNAL: "LEGIT SIGNAL",
+    NOT_FOUND: "NOT FOUND",
   };
 
   return (

@@ -178,17 +178,18 @@ STRICT RULES:
 - CRITICAL = VirusTotal detections > 2, AbuseIPDB score > 50, domain age < 7 days
 - WARNING = 1-2 detections, AbuseIPDB score 10-50, domain age < 30 days, disposable email
 - INFO = clean results, low scores, informational findings
-- If no API data is available for something, say so honestly
+- If no API data is available for something, set verdict to "NOT_FOUND" and legitimacyPercentage to 0.
 
 Respond ONLY with this JSON:
 {
   "legitimacyPercentage": <0-100>,
-  "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL>",
-  "executiveSummary": "<2-3 sentences citing actual findings>",
+  "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL | NOT_FOUND>",
+  "executiveSummary": "<2-3 sentences citing actual findings or explaining why no data was found>",
   "forensicSignals": [
     { "name": "<signal>", "severity": "<CRITICAL | WARNING | INFO>", "description": "<cite the real data>" }
   ]
-}`;
+}
+If verdict is NOT_FOUND, forensicSignals can be an empty array.`;
 
 function isRateLimitError(err: any): boolean {
   return err.message?.includes("429") || err.message?.includes("rate limit") || err.message?.includes("Rate limit") || err.message?.includes("TPD") || err.message?.includes("TPM");

@@ -1,6 +1,6 @@
 export type ToolType = 'LOOKUP' | 'EMAIL' | 'IP' | 'WEBSITE' | 'EML';
 
-export type Verdict = 'MALICIOUS_THREAT' | 'SUSPICIOUS_ACTIVITY' | 'LEGIT_SIGNAL';
+export type Verdict = 'MALICIOUS_THREAT' | 'SUSPICIOUS_ACTIVITY' | 'LEGIT_SIGNAL' | 'NOT_FOUND';
 
 export interface ForensicSignal {
   name: string;
