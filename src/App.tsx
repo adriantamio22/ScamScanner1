@@ -387,7 +387,7 @@ export default function App() {
       {/* Main Bento Grid */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 pb-8">
         {/* Left Span: History (3 cols) */}
-        <div className="lg:col-span-3 h-[600px] lg:h-auto order-2 lg:order-1 relative group">
+        <div className="lg:col-span-3 h-[600px] lg:max-h-[85vh] lg:sticky lg:top-8 order-2 lg:order-1 relative group">
           {!user && (
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center gap-4 rounded-xl border border-white/5">
               <Lock className="w-8 h-8 text-white/20" />

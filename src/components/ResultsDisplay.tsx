@@ -92,7 +92,7 @@ export function ResultsDisplay({ result, loading, error }: ResultsDisplayProps) 
         </div>
 
         {/* Forensic Signals */}
-        <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10">
+        <div className="flex-1 overflow-y-auto pr-2">
           <div className="flex items-center gap-2 mb-4">
             <Activity className="w-4 h-4 text-electric" />
             <h3 className="text-xs font-bold uppercase tracking-widest text-white/60">Forensic Signals</h3>
