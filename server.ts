@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import "dotenv/config";
 
-const RATE_LIMIT = 5;
+const RATE_LIMIT = 25;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const ipMap = new Map<string, { count: number; resetAt: number }>();
 
@@ -159,6 +159,22 @@ async function gatherRealData(type: string, input: string): Promise<string> {
     const ips = [...new Set(input.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) || [])].slice(0, 3);
     const domainMatches = input.match(/(?:From|Reply-To|Return-Path)[^\n]*@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi) || [];
     const domains = [...new Set(domainMatches.map((m: string) => m.split("@")[1]?.trim()).filter(Boolean))].slice(0, 2) as string[];
+    
+    // Impersonation Check: Detect Display Name vs Email mismatch
+    const fromLine = input.match(/From:.*<(.+@.+)>/i) || input.match(/From:\s*([^\n<]+)/i);
+    const displayName = fromLine ? fromLine[1].split('<')[0].trim() : "";
+    const emailMatch = input.match(/From:.*<(.+@.+)>/i);
+    const actualEmail = emailMatch ? emailMatch[1] : "";
+    
+    if (displayName && actualEmail) {
+      results.push(`[IDENTITY_ANALYSIS] Display Name: "${displayName}" | Actual Sender: ${actualEmail}`);
+    }
+
+    const replyToMatch = input.match(/Reply-To:\s*<(.+@.+)>/i) || input.match(/Reply-To:\s*(.+@.+)/i);
+    if (replyToMatch && actualEmail && replyToMatch[1] !== actualEmail) {
+      results.push(`[SENSITIVE_SIGNAL] Reply-To mismatch: ${replyToMatch[1]} (Expected: ${actualEmail})`);
+    }
+
     for (const ip of ips) {
       if (vtKey) results.push(await checkVTIP(ip, vtKey));
       if (abuseKey) results.push(await checkAbuseIPDB(ip, abuseKey));
@@ -182,6 +198,7 @@ STRICT RULES:
 - If no API data is available for something, set verdict to "NOT_FOUND" and legitimacyPercentage to 0.
 - EMBRACE CROSS-REFERENCING: In the executiveSummary, emphasize that the results are based on cross-referencing multiple forensic intelligence sources. 
 - AVOID REPETITION: Do not repeatedly mention specific tool names like "VirusTotal" or "AbuseIPDB" in every sentence of the summary. Use broader terms like "reputation engines", "global threat intelligence", or "forensic database correlation".
+- IMPERSONATION RADAR: Specifically look for "Display Name Spoofing" where a trusted name is used with an unrelated email. Flag "Homoglyph Attacks" (look-alike characters like 'ο' vs 'o'). Check for high-risk BEC (Business Email Compromise) patterns like Reply-To mismatches or urgency in metadata.
 
 Respond ONLY with this JSON:
 {

@@ -8,9 +8,10 @@ interface HistorySidebarProps {
   history: HistoryRecord[];
   onSelect: (record: HistoryRecord) => void;
   onClear: () => void;
+  onDelete: (id: string) => void;
 }
 
-export function HistorySidebar({ history, onSelect, onClear }: HistorySidebarProps) {
+export function HistorySidebar({ history, onSelect, onClear, onDelete }: HistorySidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredHistory = history.filter((record) => {
@@ -72,32 +73,43 @@ export function HistorySidebar({ history, onSelect, onClear }: HistorySidebarPro
           </div>
         ) : (
           filteredHistory.map((record) => (
-            <button
-              key={record.id}
-              onClick={() => onSelect(record)}
-              className="w-full text-left p-4 hover:bg-white/5 transition-colors group relative overflow-hidden"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-[9px] px-1.5 py-0.5 bg-electric/10 border border-electric/20 font-bold text-electric uppercase tracking-tighter">{record.type}</span>
-                <span className="text-[9px] text-white/30 font-mono italic">{format(record.createdAt, "MMM dd HH:mm")}</span>
-              </div>
-              <div className="text-[11px] truncate mb-3 text-white/80 font-medium group-hover:text-white transition-colors">
-                {record.input}
-              </div>
-              <div className="flex justify-between items-center">
-                <VerdictBadge verdict={record.verdict} />
-                <div className="flex items-center gap-1.5">
-                   <div className="w-12 h-1 bg-white/5 rounded-full overflow-hidden">
+            <div key={record.id} className="group relative border-b border-white/5 last:border-0">
+              <button
+                onClick={() => onSelect(record)}
+                className="w-full text-left p-4 hover:bg-white/5 transition-colors relative overflow-hidden pr-12"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[9px] px-1.5 py-0.5 bg-electric/10 border border-electric/20 font-bold text-electric uppercase tracking-tighter">{record.type}</span>
+                  <span className="text-[9px] text-white/30 font-mono italic">{format(record.createdAt, "MMM dd HH:mm")}</span>
+                </div>
+                <div className="text-[11px] truncate mb-3 text-white/80 font-medium group-hover:text-white transition-colors">
+                  {record.input}
+                </div>
+                <div className="flex justify-between items-center">
+                  <VerdictBadge verdict={record.verdict} />
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-12 h-1 bg-white/5 rounded-full overflow-hidden">
                       <div 
                         className={`h-full transition-all duration-1000 ${record.legitimacyPercentage > 70 ? 'bg-legit' : record.legitimacyPercentage > 30 ? 'bg-suspicious' : 'bg-malicious'}`}
                         style={{ width: `${record.legitimacyPercentage}%` }}
                       />
-                   </div>
-                   <span className="text-[9px] text-white/40 font-mono tracking-tighter">{record.legitimacyPercentage}%</span>
+                    </div>
+                    <span className="text-[9px] text-white/40 font-mono tracking-tighter">{record.legitimacyPercentage}%</span>
+                  </div>
                 </div>
-              </div>
-              <div className="absolute inset-y-0 left-0 w-[2px] bg-electric opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
+                <div className="absolute inset-y-0 left-0 w-[2px] bg-electric opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(record.id);
+                }}
+                className="absolute top-1/2 -translate-y-1/2 right-3 p-2 text-white/10 hover:text-malicious hover:bg-malicious/10 rounded transition-all opacity-0 group-hover:opacity-100"
+                title="Delete Record"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           ))
         )}
       </div>

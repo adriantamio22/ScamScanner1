@@ -86,6 +86,8 @@ export default function App() {
   const [portalStatus, setPortalStatus] = useState({ ok: true, status: "OPERATIONAL" });
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isClearHistoryConfirmOpen, setIsClearHistoryConfirmOpen] = useState(false);
+  const [isDeleteCaseConfirmOpen, setIsDeleteCaseConfirmOpen] = useState(false);
+  const [caseToDelete, setCaseToDelete] = useState<string | null>(null);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -174,6 +176,29 @@ export default function App() {
   const clearHistory = async () => {
     if (!user) return;
     setIsClearHistoryConfirmOpen(true);
+  };
+
+  const handleDeleteCase = (id: string) => {
+    setCaseToDelete(id);
+    setIsDeleteCaseConfirmOpen(true);
+  };
+
+  const confirmDeleteCase = async () => {
+    if (!user || !caseToDelete) return;
+    setLoading(true);
+    const path = `users/${user.uid}/cases`;
+    try {
+      await deleteDoc(doc(db, path, caseToDelete));
+      if (currentResult?.id === caseToDelete) {
+        setCurrentResult(null);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `${path}/${caseToDelete}`);
+    } finally {
+      setLoading(false);
+      setCaseToDelete(null);
+      setIsDeleteCaseConfirmOpen(false);
+    }
   };
 
   const confirmClearHistory = async () => {
@@ -403,7 +428,12 @@ export default function App() {
               </button>
             </div>
           )}
-          <HistorySidebar history={history} onSelect={handleSelectHistory} onClear={clearHistory} />
+          <HistorySidebar 
+            history={history} 
+            onSelect={handleSelectHistory} 
+            onClear={clearHistory} 
+            onDelete={handleDeleteCase}
+          />
         </div>
 
         {/* Right Span: Tools & Results (9 cols) */}
@@ -615,6 +645,16 @@ export default function App() {
         message="ARE YOU SURE YOU WANT TO PURGE ALL CASE RECORDS? THIS ACTION IS IRREVERSIBLE AND ALL FORENSIC HISTORY WILL BE PERMANENTLY DELETED FROM THE SERVER."
         confirmLabel="PURGE RECORDS"
         cancelLabel="ABORT"
+      />
+
+      <ConfirmModal
+        isOpen={isDeleteCaseConfirmOpen}
+        onClose={() => setIsDeleteCaseConfirmOpen(false)}
+        onConfirm={confirmDeleteCase}
+        title="RECORD REMOVAL"
+        message="ARE YOU SURE YOU WANT TO REMOVE THIS SPECIFIC CASE RECORD? THIS WILL PERMANENTLY DELETE THE EVIDENCE FROM THE SECURE CLOUD DATABASE."
+        confirmLabel="DELETE RECORD"
+        cancelLabel="CANCEL"
       />
     </div>
   );
