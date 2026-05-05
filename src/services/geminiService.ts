@@ -14,27 +14,10 @@ export async function checkApiStatus(): Promise<{ ok: boolean; status: string }>
 }
 
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
-  let hibpContext = "";
-  if (type === "EMAIL" || type === "LOOKUP") {
-    try {
-      const res = await fetch("/api/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "hibp", input }),
-      });
-      if (res.ok) {
-        const { context } = await res.json();
-        hibpContext = context || "";
-      }
-    } catch {
-      // proceed without HIBP data
-    }
-  }
-
   const res = await fetch("/api/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "analyze", type, input: `${input}${hibpContext}` }),
+    body: JSON.stringify({ action: "analyze", type, input }),
   });
 
   if (!res.ok) {

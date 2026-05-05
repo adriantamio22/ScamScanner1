@@ -13,8 +13,8 @@ const TOOLS = [
     type: 'LOOKUP' as ToolType,
     label: 'Domain Lookup',
     icon: Search,
-    description: 'Comprehensive domain and URL intelligence. Analyzes safety, DNS records (MX/SPF/DMARC), and reputation, similar to VirusTotal.',
-    placeholder: 'Enter domain or entity to lookup...'
+    description: 'Comprehensive domain, URL, and malware intelligence. Analyzes safety, DNS records, and reputation. For hashes, it references Microsoft Security Intelligence and VirusTotal.',
+    placeholder: 'Enter domain, hash (SHA256), or entity...'
   },
   {
     type: 'EMAIL' as ToolType,
