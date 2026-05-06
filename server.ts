@@ -128,10 +128,12 @@ async function gatherRealData(type: string, input: string): Promise<string> {
   const results: string[] = [];
   const trimmedInput = input.trim();
 
+  // Smart classification logic
   if (type === "LOOKUP") {
     if (/^[a-fA-F0-9]{32,64}$/.test(trimmedInput)) {
       results.push(`[CLASSIFICATION] Input identified as a cryptographic HASH (Malware Signature).`);
       if (vtKey) results.push(await checkVTHash(trimmedInput, vtKey));
+      else results.push("[WARNING] VirusTotal API key missing. Unable to verify hash reputation.");
     } else {
       results.push(`[CLASSIFICATION] Input identified as a DOMAIN or HOSTNAME.`);
       if (vtKey) results.push(await checkVTDomain(trimmedInput, vtKey));
@@ -142,7 +144,9 @@ async function gatherRealData(type: string, input: string): Promise<string> {
   if (type === "EMAIL") {
     results.push(`[CLASSIFICATION] Input identified as an EMAIL ADDRESS.`);
     results.push(await checkEmailDisify(trimmedInput));
-    results.push(await checkHIBP(trimmedInput, hibpKey));
+    if (hibpKey) results.push(await checkHIBP(trimmedInput, hibpKey));
+    else results.push("[INFO] HIBP API key missing. Skipping data breach correlation.");
+    
     const domain = trimmedInput.split("@")[1];
     if (domain) {
       if (vtKey) results.push(await checkVTDomain(domain, vtKey));
@@ -154,6 +158,7 @@ async function gatherRealData(type: string, input: string): Promise<string> {
     results.push(`[CLASSIFICATION] Input identified as an IP ADDRESS.`);
     if (vtKey) results.push(await checkVTIP(trimmedInput, vtKey));
     if (abuseKey) results.push(await checkAbuseIPDB(trimmedInput, abuseKey));
+    else results.push("[INFO] AbuseIPDB API key missing. Skipping IP reputation scoring.");
   }
 
   if (type === "WEBSITE") {
@@ -170,7 +175,10 @@ async function gatherRealData(type: string, input: string): Promise<string> {
     results.push(`[CLASSIFICATION] Input identified as RAW EMAIL CONTENT / HEADERS.`);
     const ips = [...new Set(input.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) || [])].slice(0, 3);
     const domainMatches = input.match(/(?:From|Reply-To|Return-Path)[^\n]*@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi) || [];
-    const domains = [...new Set(domainMatches.map((m: string) => m.split("@")[1]?.trim()).filter(Boolean))].slice(0, 2) as string[];
+    const domains = [...new Set(domainMatches.map((m: string) => {
+      const email = m.split('@')[1];
+      return email ? email.trim() : "";
+    }).filter(Boolean))].slice(0, 2) as string[];
     
     // Impersonation Check: Detect Display Name vs Email mismatch
     const fromLine = input.match(/From:.*<(.+@.+)>/i) || input.match(/From:\s*([^\n<]+)/i);
@@ -183,8 +191,11 @@ async function gatherRealData(type: string, input: string): Promise<string> {
     }
 
     const replyToMatch = input.match(/Reply-To:\s*<(.+@.+)>/i) || input.match(/Reply-To:\s*(.+@.+)/i);
-    if (replyToMatch && actualEmail && replyToMatch[1] !== actualEmail) {
-      results.push(`[SENSITIVE_SIGNAL] Reply-To mismatch: ${replyToMatch[1]} (Expected: ${actualEmail})`);
+    if (replyToMatch && actualEmail && (replyToMatch[1] || replyToMatch[0]) !== actualEmail) {
+      const replyEmail = replyToMatch[1] || replyToMatch[0];
+      if (replyEmail.includes('@')) {
+        results.push(`[SENSITIVE_SIGNAL] Reply-To mismatch detected. Replies are routed to: ${replyEmail}`);
+      }
     }
 
     for (const ip of ips) {
@@ -294,12 +305,28 @@ async function startServer() {
   // API Routes
   app.post("/api/gemini", async (req, res) => {
     const { action, type, input, message: fallbackMessage } = req.body ?? {};
+    const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
 
     if (action === "status") {
-      return res.json({ ok: true, status: "OPERATIONAL" });
+      const keys = {
+        gemini: !!process.env.GEMINI_API_KEY,
+        virusTotal: !!process.env.VIRUSTOTAL_API_KEY,
+        abuseIPDB: !!process.env.ABUSEIPDB_API_KEY,
+        hibp: !!process.env.HIBP_API_KEY,
+        groq: !!process.env.GROQ_API_KEY,
+        openRouter: !!process.env.OPENROUTER_API_KEY,
+      };
+      
+      const missingKeys = Object.entries(keys).filter(([_, set]) => !set).map(([name]) => name);
+      
+      return res.json({ 
+        ok: true, 
+        status: missingKeys.length > 0 ? "DEGRADED" : "OPERATIONAL",
+        info: missingKeys.length > 0 ? `Missing keys: ${missingKeys.join(", ")}` : "All systems normal",
+        authStatus: keys
+      });
     }
 
-    const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
     const { allowed, remaining, resetAt } = checkRateLimit(clientIP);
     if (!allowed) {
       const mins = Math.ceil((resetAt - Date.now()) / 60000);
@@ -309,11 +336,12 @@ async function startServer() {
       });
     }
 
-    if (action === "forensics") {
+    if (action === "forensics" || action === "analyze") {
       try {
         const realData = await gatherRealData(type, input);
         return res.json({ success: true, realData, remaining });
       } catch (err: any) {
+        console.error("Forensics failed:", err);
         return res.status(500).json({ error: err.message || "Forensics failed" });
       }
     }
@@ -323,11 +351,13 @@ async function startServer() {
         const rawJson = await callWithFallback(fallbackMessage);
         return res.json({ success: true, data: JSON.parse(rawJson), remaining });
       } catch (err: any) {
+        console.error("Fallback analysis failed:", err);
         return res.status(500).json({ error: err.message || "Fallback analysis failed" });
       }
     }
 
-    return res.status(400).json({ error: "Invalid action" });
+    console.warn(`[API] Invalid action received: "${action}" from ${clientIP}`);
+    return res.status(400).json({ error: "Invalid action", received: action });
   });
 
   // Vite middleware for development

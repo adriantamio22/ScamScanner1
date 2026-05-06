@@ -26,7 +26,7 @@ Respond ONLY with this JSON:
 }
 If verdict is NOT_FOUND, forensicSignals can be an empty array.`;
 
-export async function checkApiStatus(): Promise<{ ok: boolean; status: string }> {
+export async function checkApiStatus(): Promise<{ ok: boolean; status: string; info?: string; authStatus?: any }> {
   try {
     const res = await fetch("/api/gemini", {
       method: "POST",
@@ -35,7 +35,7 @@ export async function checkApiStatus(): Promise<{ ok: boolean; status: string }>
     });
     return await res.json();
   } catch {
-    return { ok: false, status: "API_ERROR" };
+    return { ok: false, status: "API_ERROR", info: "Portal connection failed." };
   }
 }
 
