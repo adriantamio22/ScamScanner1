@@ -2,8 +2,9 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import "dotenv/config";
+import OpenAI from "openai";
 
-const RATE_LIMIT = 5;
+const RATE_LIMIT = 10;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const ipMap = new Map<string, { count: number; resetAt: number }>();
 
@@ -201,17 +202,63 @@ STRICT RULES:
 - IMPERSONATION RADAR: Specifically look for "Display Name Spoofing" where a trusted name is used with an unrelated email. Flag "Homoglyph Attacks" (look-alike characters like 'ο' vs 'o'). Check for high-risk BEC (Business Email Compromise) patterns like Reply-To mismatches or urgency in metadata.
 - INPUT CLASSIFICATION: Identify what the input is (e.g., "Domain", "IPv4 Address", "IPv6 Address", "File Hash (SHA-1/256/MD5)", "Email Address", "Email Headers", "URL/Website").
 
-Respond ONLY with this JSON:
+Respond ONLY with this JSON structure:
 {
-  "legitimacyPercentage": <0-100>,
-  "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL | NOT_FOUND>",
-  "detectedType": "<type>",
-  "executiveSummary": "<2-3 sentences providing a high-level technical overview. Highlight the correlation between different intelligence sources without brand-dumping.>",
+  "legitimacyPercentage": number,
+  "verdict": "MALICIOUS_THREAT" | "SUSPICIOUS_ACTIVITY" | "LEGIT_SIGNAL" | "NOT_FOUND",
+  "detectedType": "string",
+  "executiveSummary": "string",
   "forensicSignals": [
-    { "name": "<signal>", "severity": "<CRITICAL | WARNING | INFO>", "description": "<cite the real data>" }
+    { "name": "string", "severity": "CRITICAL" | "WARNING" | "INFO", "description": "string" }
   ]
+}`;
+
+async function analyzeWithGroq(prompt: string): Promise<any> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY_MISSING");
+  
+  const groq = new OpenAI({
+    apiKey,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
+  
+  const completion = await groq.chat.completions.create({
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: prompt }
+    ],
+    model: "llama-3.3-70b-versatile",
+    response_format: { type: "json_object" }
+  });
+  
+  return JSON.parse(completion.choices[0].message.content || "{}");
 }
-If verdict is NOT_FOUND, forensicSignals can be an empty array.`;
+
+async function analyzeWithOpenRouter(prompt: string): Promise<any> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY_MISSING");
+  
+  const openrouter = new OpenAI({
+    apiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultHeaders: {
+      "HTTP-Referer": "https://ai.studio/build",
+      "X-Title": "ScamScanner"
+    }
+  });
+  
+  const completion = await openrouter.chat.completions.create({
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: prompt }
+    ],
+    model: "google/gemini-2.0-flash-lite-preview-02-05:free",
+  });
+  
+  const content = completion.choices[0].message.content || "{}";
+  const cleanedText = content.replace(/```json/g, "").replace(/```/g, "").trim();
+  return JSON.parse(cleanedText);
+}
 
 function isRateLimitError(err: any): boolean {
   return err.message?.includes("429") || err.message?.includes("rate limit") || err.message?.includes("Rate limit") || err.message?.includes("TPD") || err.message?.includes("TPM");
@@ -244,14 +291,30 @@ async function startServer() {
 
       try {
         const realData = await gatherRealData(type, input);
+        const prompt = `Scan type: ${type}\nInput: ${input}\n\nReal forensic data collected:\n${realData || "No API data available for this input."}`;
+        
+        let result = null;
+        let provider = "groq";
+
+        // Multiprovider Fallback Chain: Groq (Primary) -> OpenRouter Free (Secondary)
+        try {
+          console.log("Attempting Groq analysis (Primary)...");
+          result = await analyzeWithGroq(prompt);
+        } catch (err: any) {
+          console.warn("Groq failed, trying OpenRouter Free backup...", err.message);
+          provider = "openrouter-free";
+          result = await analyzeWithOpenRouter(prompt);
+        }
+
         return res.json({ 
           success: true, 
-          realData,
+          result,
+          provider,
           remaining 
         });
       } catch (err: any) {
-        console.error("Data Gathering Error:", err);
-        return res.status(500).json({ error: err.message || "Failed to gather data" });
+        console.error("Analysis Pipeline Error:", err);
+        return res.status(500).json({ error: err.message || "Analysis failed" });
       }
     }
 
