@@ -20,6 +20,7 @@ function getIP(req: any): string {
   return (
     req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
     req.headers["x-real-ip"] ||
+    req.socket.remoteAddress ||
     "unknown"
   );
 }
@@ -39,48 +40,110 @@ function checkRateLimit(ip: string): { allowed: boolean; remaining: number; rese
   return { allowed: true, remaining: RATE_LIMIT - record.count, resetAt: record.resetAt };
 }
 
-async function callHIBP(email: string): Promise<any[]> {
+// REAL DATA RESOURCES
+
+async function callHIBP(email: string): Promise<string> {
   const apiKey = process.env.HIBP_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) return "";
   try {
     const res = await fetch(
       `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`,
       { headers: { "hibp-api-key": apiKey, "user-agent": "ScamScanner-Forensic-Lab" } }
     );
-    if (!res.ok) return [];
-    return await res.json();
-  } catch {
-    return [];
-  }
-}
-
-async function callDisify(email: string): Promise<string> {
-  try {
-    const res = await fetch(`https://www.disify.com/api/email/${encodeURIComponent(email)}`);
     if (!res.ok) return "";
-    const data = await res.json();
-    return `[DISIFY: Format Valid=${data.format}, Disposable=${data.disposable}, DNS Valid=${data.dns}]`;
+    const breaches = await res.json();
+    return `[HIBP: ${breaches.length} breaches found: ${breaches.slice(0, 3).map((b: any) => b.Name).join(", ")}]`;
   } catch {
     return "";
   }
 }
 
-const SYSTEM_PROMPT = `You are ScamScanner, a Digital Forensic Analyst.
-Analyze the given input and respond ONLY with a valid JSON object in this exact format:
+async function callDisify(email: string): Promise<string> {
+  try {
+    const apiKey = process.env.DISIFY_API_KEY;
+    const url = `https://www.disify.com/api/email/${encodeURIComponent(email)}`;
+    const headers: any = {};
+    if (apiKey) {
+      // Assuming Disify might use an API key in headers if configured
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+    
+    const res = await fetch(url, { headers });
+    if (!res.ok) return "";
+    const data = await res.json();
+    return `[DISIFY: Format=${data.format}, Domain=${data.domain}, Disposable=${data.disposable}, DNS=${data.dns}, Whitelisted=${data.whitelisted}]`;
+  } catch {
+    return "";
+  }
+}
+
+async function callVirusTotal(type: string, input: string): Promise<string> {
+  const apiKey = process.env.VIRUSTOTAL_API_KEY;
+  if (!apiKey) return "";
+  try {
+    let endpoint = "";
+    if (type === "IP") endpoint = `/ip_addresses/${input}`;
+    else if (type === "WEBSITE") {
+      const urlId = Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      endpoint = `/urls/${urlId}`;
+    } else if (type === "LOOKUP") endpoint = `/files/${input}`;
+    else return "";
+
+    const res = await fetch(`https://www.virustotal.com/api/v3${endpoint}`, {
+      headers: { "x-apikey": apiKey },
+    });
+    if (!res.ok) return "";
+    const data = await res.json();
+    const stats = data.data?.attributes?.last_analysis_stats;
+    if (!stats) return "";
+    return `[VIRUSTOTAL: Malicious=${stats.malicious}, Suspicious=${stats.suspicious}, Harmless=${stats.harmless}, Undetected=${stats.undetected}]`;
+  } catch {
+    return "";
+  }
+}
+
+async function callAbuseIPDB(ip: string): Promise<string> {
+  const apiKey = process.env.ABUSEIPDB_API_KEY;
+  if (!apiKey) return "";
+  try {
+    const res = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}`, {
+      headers: { "Key": apiKey, "Accept": "application/json" },
+    });
+    if (!res.ok) return "";
+    const { data } = await res.json();
+    return `[ABUSEIPDB: Confidence Score=${data.abuseConfidenceScore}%, Reports=${data.totalReports}, Country=${data.countryCode}, Usage=${data.usageType}]`;
+  } catch {
+    return "";
+  }
+}
+
+const SYSTEM_PROMPT = `You are ScamScanner, a digital forensic assistant. You must only make claims supported by the provided REAL_CONTEXT or directly observable from USER_INPUT.
+
+Return ONLY valid JSON in this exact shape:
 {
   "legitimacyPercentage": <number 0-100>,
   "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL>",
-  "executiveSummary": "<concise forensic overview>",
+  "executiveSummary": "<summary>",
   "forensicSignals": [
-    { "name": "<signal name>", "severity": "<CRITICAL | WARNING | INFO>", "description": "<detail>" }
+    {
+      "name": "<signal>",
+      "severity": "<CRITICAL | WARNING | INFO>",
+      "description": "<evidence-backed explanation>"
+    }
   ]
 }
 
-STRICT GUIDELINES:
-1. Do NOT invent/hallucinate forensic data. Only use provided context (HIBP, Disify, or headers).
-2. If real API context is missing, describe your analysis as "heuristic-based".
-3. Do NOT mention specific tool names (HIBP, Disify) in the final verdict; use terms like "threat intelligence" or "mailbox verification".
-4. Respond with ONLY the JSON object.`;
+Rules:
+- Do not invent data.
+- Do not guess exact breach counts, geolocation, domain age, WHOIS ownership, malware detections, blacklist status, abuse confidence scores, or mailbox existence.
+- Only say mailbox existence is verified if a real email validation service confirms it.
+- If only Disify is available, describe the result as basic email validation unless it explicitly confirms deliverability.
+- If real context is missing, say the analysis is heuristic or limited.
+- Every forensic signal must be tied to REAL_CONTEXT, USER_INPUT, or clearly labeled as heuristic.
+- Output JSON only.
+- No markdown.
+- No code fences.
+- No extra text.`;
 
 function isProviderError(err: any): boolean {
   const msg = (err.message || "").toLowerCase();
@@ -91,7 +154,8 @@ function isProviderError(err: any): boolean {
     msg.includes("tpd") ||
     msg.includes("tpm") ||
     msg.includes("unavailable") ||
-    msg.includes("overloaded")
+    msg.includes("overloaded") ||
+    msg.includes("rate_limit")
   );
 }
 
@@ -111,7 +175,7 @@ async function callAIProvider(url: string, apiKey: string, model: string, messag
         { role: "user", content: message },
       ],
       max_tokens: 1024,
-      temperature: 0.3,
+      temperature: 0.1, // Lower temperature for more consistent JSON
     }),
   });
 
@@ -121,10 +185,12 @@ async function callAIProvider(url: string, apiKey: string, model: string, messag
   }
 
   const data = await res.json();
-  return data.choices[0].message.content;
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Empty response from AI provider");
+  return content;
 }
 
-async function performAnalysisWithFallback(message: string): Promise<{ data: any; provider: string }> {
+async function performAnalysisWithFallback(message: string): Promise<{ data: string; provider: string }> {
   const groqKey = process.env.GROQ_API_KEY;
   const openrouterKey = process.env.OPENROUTER_API_KEY;
 
@@ -188,14 +254,14 @@ export default async function handler(req: any, res: any) {
 
   if (resolvedAction === "hibp") {
     try {
-      const breaches = await callHIBP(input);
-      const disify = await callDisify(input);
-      const hibpContext = breaches.length > 0
-        ? `\n[HIBP: ${breaches.length} breach(es) found: ${breaches.slice(0, 5).map((b: any) => b.Name).join(", ")}]`
-        : `\n[HIBP: No known breaches found]`;
-      return res.json({ context: `${hibpContext}\n${disify}` });
+      const results = [];
+      if (type === "EMAIL" || type === "MAILBOX") {
+        results.push(await callHIBP(input));
+        results.push(await callDisify(input));
+      }
+      return res.json({ context: results.filter(Boolean).join("\n") });
     } catch {
-      return res.status(500).json({ error: "HIBP check failed" });
+      return res.status(500).json({ error: "Context gathering failed" });
     }
   }
 
@@ -209,7 +275,8 @@ export default async function handler(req: any, res: any) {
   }
 
   if (resolvedAction === "analyze") {
-    const cacheKey = `${type}:${input}`;
+    const normalizedInput = String(input || "").trim();
+    const cacheKey = `${type}:${normalizedInput}`;
     const cached = scanCache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) {
       return res.json({ success: true, data: cached.result, cached: true });
@@ -227,9 +294,25 @@ export default async function handler(req: any, res: any) {
     }
 
     try {
-      const { data: rawJson, provider } = await performAnalysisWithFallback(
-        `Analyze this ${type} input: ${input}. Perform a deep forensic simulation.`
-      );
+      // Gather REAL_CONTEXT
+      const contextParts = [];
+      if (type === "EMAIL" || type === "MAILBOX") {
+        contextParts.push(await callDisify(normalizedInput));
+        contextParts.push(await callHIBP(normalizedInput));
+      } else if (type === "IP") {
+        contextParts.push(await callAbuseIPDB(normalizedInput));
+        contextParts.push(await callVirusTotal("IP", normalizedInput));
+      } else if (type === "WEBSITE") {
+        contextParts.push(await callVirusTotal("WEBSITE", normalizedInput));
+      } else if (type === "LOOKUP") {
+        contextParts.push(await callVirusTotal("LOOKUP", normalizedInput));
+      }
+
+      const realContext = contextParts.filter(Boolean).join("\n") || "No real API data available for this input.";
+      
+      const prompt = `REAL_CONTEXT:\n${realContext}\n\nUSER_INPUT:\n${normalizedInput}\n\nSCAN_TYPE:\n${type}`;
+
+      const { data: rawJson, provider } = await performAnalysisWithFallback(prompt);
       
       const jsonMatch = rawJson.match(/\{[\s\S]*\}/);
       const cleanedJson = JSON.parse(jsonMatch ? jsonMatch[0] : rawJson);
@@ -248,4 +331,5 @@ export default async function handler(req: any, res: any) {
     receivedAction: action
   });
 }
+
 
