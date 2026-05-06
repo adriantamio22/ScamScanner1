@@ -11,6 +11,7 @@ export interface ForensicSignal {
 export interface ScanResult {
   userId: string;
   type: ToolType;
+  entityType?: string;
   input: string;
   legitimacyPercentage: number;
   verdict: Verdict;
@@ -23,6 +24,7 @@ export interface ScanResult {
 export interface HistoryRecord {
   id: string;
   type: ToolType;
+  entityType?: string;
   input: string;
   verdict: Verdict;
   legitimacyPercentage: number;

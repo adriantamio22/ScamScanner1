@@ -66,6 +66,11 @@ export function ResultsDisplay({ result, loading, error }: ResultsDisplayProps) 
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] font-bold text-electric bg-electric/10 px-1.5 py-0.5">CASE ID: {result.id.toUpperCase()}</span>
+              {result.entityType && (
+                <span className="text-[10px] font-bold text-white/50 bg-white/5 border border-white/10 px-1.5 py-0.5 uppercase tracking-tighter">
+                  TYPE: {result.entityType}
+                </span>
+              )}
               <VerdictBadge verdict={result.verdict} />
             </div>
             <h2 className="text-2xl font-bold tracking-tighter text-white truncate max-w-md">

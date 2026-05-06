@@ -126,15 +126,24 @@ async function gatherRealData(type: string, input: string): Promise<string> {
   const abuseKey = process.env.ABUSEIPDB_API_KEY || "";
   const hibpKey = process.env.HIBP_API_KEY || "";
   const results: string[] = [];
+  const trimmedInput = input.trim();
 
   if (type === "LOOKUP") {
-    if (vtKey) results.push(await checkVTHash(input.trim(), vtKey));
+    if (/^[a-fA-F0-9]{32,64}$/.test(trimmedInput)) {
+      results.push(`[CLASSIFICATION] Input identified as a cryptographic HASH (Malware Signature).`);
+      if (vtKey) results.push(await checkVTHash(trimmedInput, vtKey));
+    } else {
+      results.push(`[CLASSIFICATION] Input identified as a DOMAIN or HOSTNAME.`);
+      if (vtKey) results.push(await checkVTDomain(trimmedInput, vtKey));
+      results.push(await checkWHOIS(trimmedInput));
+    }
   }
 
   if (type === "EMAIL") {
-    results.push(await checkEmailDisify(input.trim()));
-    results.push(await checkHIBP(input.trim(), hibpKey));
-    const domain = input.split("@")[1];
+    results.push(`[CLASSIFICATION] Input identified as an EMAIL ADDRESS.`);
+    results.push(await checkEmailDisify(trimmedInput));
+    results.push(await checkHIBP(trimmedInput, hibpKey));
+    const domain = trimmedInput.split("@")[1];
     if (domain) {
       if (vtKey) results.push(await checkVTDomain(domain, vtKey));
       results.push(await checkWHOIS(domain));
@@ -142,20 +151,23 @@ async function gatherRealData(type: string, input: string): Promise<string> {
   }
 
   if (type === "IP") {
-    if (vtKey) results.push(await checkVTIP(input.trim(), vtKey));
-    if (abuseKey) results.push(await checkAbuseIPDB(input.trim(), abuseKey));
+    results.push(`[CLASSIFICATION] Input identified as an IP ADDRESS.`);
+    if (vtKey) results.push(await checkVTIP(trimmedInput, vtKey));
+    if (abuseKey) results.push(await checkAbuseIPDB(trimmedInput, abuseKey));
   }
 
   if (type === "WEBSITE") {
-    const domain = input.replace(/^https?:\/\//, "").split("/")[0];
+    results.push(`[CLASSIFICATION] Input identified as a WEBSITE URL.`);
+    const domain = trimmedInput.replace(/^https?:\/\//, "").split("/")[0];
     if (vtKey) {
-      results.push(await checkVTURL(input.trim(), vtKey));
+      results.push(await checkVTURL(trimmedInput, vtKey));
       results.push(await checkVTDomain(domain, vtKey));
     }
     results.push(await checkWHOIS(domain));
   }
 
   if (type === "EML") {
+    results.push(`[CLASSIFICATION] Input identified as RAW EMAIL CONTENT / HEADERS.`);
     const ips = [...new Set(input.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) || [])].slice(0, 3);
     const domainMatches = input.match(/(?:From|Reply-To|Return-Path)[^\n]*@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi) || [];
     const domains = [...new Set(domainMatches.map((m: string) => m.split("@")[1]?.trim()).filter(Boolean))].slice(0, 2) as string[];
@@ -202,6 +214,7 @@ STRICT RULES:
 
 Respond ONLY with this JSON:
 {
+  "entityType": "<Domain | Hash | IP | Email | URL | EML | Malware Signature | Intelligence Point>",
   "legitimacyPercentage": <0-100>,
   "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL | NOT_FOUND>",
   "executiveSummary": "<2-3 sentences providing a high-level technical overview. Highlight the correlation between different intelligence sources without brand-dumping.>",
@@ -241,17 +254,35 @@ async function callAI(url: string, apiKey: string, model: string, message: strin
 async function callWithFallback(message: string): Promise<string> {
   const groqKey = process.env.GROQ_API_KEY;
   const orKey = process.env.OPENROUTER_API_KEY;
+
+  // 1. Try Groq (Primary Fallback)
   if (groqKey) {
     try {
       return await callAI("https://api.groq.com/openai/v1/chat/completions", groqKey, "llama-3.1-8b-instant", message);
     } catch (err: any) {
-      if (!isRateLimitError(err)) throw err;
+      console.warn("Groq failed, trying OpenRouter...", err.message);
     }
   }
+
+  // 3. Try OpenRouter (Tertiary - Fallback Models)
   if (orKey) {
-    return await callAI("https://openrouter.ai/api/v1/chat/completions", orKey, "meta-llama/llama-3.1-8b-instruct:free", message);
+    const fallbackModels = [
+      "google/gemma-2-9b-it:free",
+      "mistralai/mistral-7b-instruct:free",
+      "meta-llama/llama-3.2-3b-instruct:free",
+    ];
+
+    for (const model of fallbackModels) {
+      try {
+        return await callAI("https://openrouter.ai/api/v1/chat/completions", orKey, model, message);
+      } catch (err: any) {
+        console.warn(`OpenRouter model ${model} failed, trying next...`);
+        continue;
+      }
+    }
   }
-  throw new Error("No AI providers available.");
+
+  throw new Error("All AI providers are currently unavailable. Please try again later.");
 }
 
 async function startServer() {
@@ -262,36 +293,37 @@ async function startServer() {
 
   // API Routes
   app.post("/api/gemini", async (req, res) => {
-    const { action, type, input } = req.body ?? {};
+    const { action, type, input, message: fallbackMessage } = req.body ?? {};
 
     if (action === "status") {
+      return res.json({ ok: true, status: "OPERATIONAL" });
+    }
+
+    const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
+    const { allowed, remaining, resetAt } = checkRateLimit(clientIP);
+    if (!allowed) {
+      const mins = Math.ceil((resetAt - Date.now()) / 60000);
+      return res.status(429).json({
+        error: "RATE_LIMITED",
+        message: `Scan limit reached (${RATE_LIMIT} scans/hour). Try again in ${mins} minute${mins !== 1 ? "s" : ""}.`,
+      });
+    }
+
+    if (action === "forensics") {
       try {
-        await callWithFallback("hi");
-        return res.json({ ok: true, status: "OPERATIONAL" });
-      } catch {
-        return res.json({ ok: false, status: "API_ERROR" });
+        const realData = await gatherRealData(type, input);
+        return res.json({ success: true, realData, remaining });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message || "Forensics failed" });
       }
     }
 
-    if (action === "analyze") {
-      const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
-      const { allowed, remaining, resetAt } = checkRateLimit(clientIP);
-      if (!allowed) {
-        const mins = Math.ceil((resetAt - Date.now()) / 60000);
-        return res.status(429).json({
-          error: "RATE_LIMITED",
-          message: `Scan limit reached (${RATE_LIMIT} scans/hour). Try again in ${mins} minute${mins !== 1 ? "s" : ""}.`,
-        });
-      }
-
+    if (action === "analyze-fallback") {
       try {
-        const realData = await gatherRealData(type, input);
-        const message = `Scan type: ${type}\nInput: ${input}\n\nReal forensic data collected:\n${realData || "No API data available for this input."}`;
-        const rawJson = await callWithFallback(message);
+        const rawJson = await callWithFallback(fallbackMessage);
         return res.json({ success: true, data: JSON.parse(rawJson), remaining });
       } catch (err: any) {
-        console.error("Analysis Error:", err);
-        return res.status(500).json({ error: err.message || "Analysis failed" });
+        return res.status(500).json({ error: err.message || "Fallback analysis failed" });
       }
     }
 

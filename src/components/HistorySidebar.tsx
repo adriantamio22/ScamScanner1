@@ -19,7 +19,8 @@ export function HistorySidebar({ history, onSelect, onClear, onDelete }: History
     return (
       record.input.toLowerCase().includes(query) ||
       record.type.toLowerCase().includes(query) ||
-      record.verdict.toLowerCase().includes(query)
+      record.verdict.toLowerCase().includes(query) ||
+      (record.entityType && record.entityType.toLowerCase().includes(query))
     );
   });
 
@@ -79,7 +80,12 @@ export function HistorySidebar({ history, onSelect, onClear, onDelete }: History
                 className="w-full text-left p-4 hover:bg-white/5 transition-colors relative overflow-hidden pr-12"
               >
                 <div className="flex justify-between items-start mb-2">
-                  <span className="text-[9px] px-1.5 py-0.5 bg-electric/10 border border-electric/20 font-bold text-electric uppercase tracking-tighter">{record.type}</span>
+                  <div className="flex gap-2">
+                    <span className="text-[9px] px-1.5 py-0.5 bg-electric/10 border border-electric/20 font-bold text-electric uppercase tracking-tighter">{record.type}</span>
+                    {record.entityType && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-white/5 border border-white/10 font-bold text-white/30 uppercase tracking-tighter">{record.entityType}</span>
+                    )}
+                  </div>
                   <span className="text-[9px] text-white/30 font-mono italic">{format(record.createdAt, "MMM dd HH:mm")}</span>
                 </div>
                 <div className="text-[11px] truncate mb-3 text-white/80 font-medium group-hover:text-white transition-colors">
