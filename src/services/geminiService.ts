@@ -1,6 +1,6 @@
 import { ScanResult, ToolType } from "../types";
 
-export async function checkApiStatus(): Promise<{ ok: boolean; status: string }> {
+export async function checkApiStatus(): Promise<{ ok: boolean; status: string; provider?: string; model?: string; message?: string }> {
   try {
     const res = await fetch("/api/gemini", {
       method: "POST",
@@ -8,38 +8,20 @@ export async function checkApiStatus(): Promise<{ ok: boolean; status: string }>
       body: JSON.stringify({ action: "status" }),
     });
     return await res.json();
-  } catch {
-    return { ok: false, status: "API_ERROR" };
+  } catch (err: any) {
+    return { ok: false, status: "API_ERROR", message: err.message };
   }
 }
 
 export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
-  let hibpContext = "";
-  if (type === "EMAIL" || type === "MAILBOX") {
-    try {
-      const res = await fetch("/api/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "hibp", input }),
-      });
-      if (res.ok) {
-        const { context } = await res.json();
-        hibpContext = context || "";
-      }
-    } catch {
-      // proceed without HIBP data
-    }
-  }
-
   const res = await fetch("/api/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "analyze", type, input: `${input}${hibpContext}` }),
+    body: JSON.stringify({ action: "analyze", type, input }),
   });
 
   if (!res.ok) {
     const err = await res.json();
-    if (err.error === "RATE_LIMITED") throw new Error(`RATE_LIMITED: ${err.message}`);
     throw new Error(err.message || err.error || "Analysis failed");
   }
 

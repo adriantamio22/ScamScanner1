@@ -17,6 +17,8 @@ export interface ScanResult {
   classification?: string;
   executiveSummary: string;
   forensicSignals: ForensicSignal[];
+  sourcesChecked?: string[];
+  limitations?: string[];
   createdAt: number;
   id: string;
 }
@@ -30,5 +32,7 @@ export interface HistoryRecord {
   legitimacyPercentage: number;
   executiveSummary: string;
   forensicSignals: ForensicSignal[];
+  sourcesChecked?: string[];
+  limitations?: string[];
   createdAt: number;
 }

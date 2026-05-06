@@ -40,63 +40,84 @@ function checkRateLimit(ip: string): { allowed: boolean; remaining: number; rese
   return { allowed: true, remaining: RATE_LIMIT - record.count, resetAt: record.resetAt };
 }
 
-// REAL DATA RESOURCES
+// Input type detection helpers
+const PATTERNS = {
+  EMAIL: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  IP: /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/,
+  MD5: /^[a-fA-F0-9]{32}$/,
+  SHA1: /^[a-fA-F0-9]{40}$/,
+  SHA256: /^[a-fA-F0-9]{64}$/,
+  URL: /^https?:\/\/[^\s$.?#].[^\s]*$/i,
+  DOMAIN: /^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$/
+};
 
-async function callHIBP(email: string): Promise<string> {
-  const apiKey = process.env.HIBP_API_KEY;
-  if (!apiKey) return "";
-  try {
-    const res = await fetch(
-      `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`,
-      { headers: { "hibp-api-key": apiKey, "user-agent": "ScamScanner-Forensic-Lab" } }
-    );
-    if (!res.ok) return "";
-    const breaches = await res.json();
-    return `[HIBP: ${breaches.length} breaches found: ${breaches.slice(0, 3).map((b: any) => b.Name).join(", ")}]`;
-  } catch {
-    return "";
-  }
+function detectInputType(input: string): string {
+  const trimmed = input.trim();
+  if (PATTERNS.EMAIL.test(trimmed)) return "EMAIL";
+  if (PATTERNS.IP.test(trimmed)) return "IP";
+  if (PATTERNS.SHA256.test(trimmed)) return "SHA256";
+  if (PATTERNS.SHA1.test(trimmed)) return "SHA1";
+  if (PATTERNS.MD5.test(trimmed)) return "MD5";
+  if (PATTERNS.URL.test(trimmed)) return "URL";
+  if (PATTERNS.DOMAIN.test(trimmed)) return "DOMAIN";
+  if (trimmed.length > 100 && (trimmed.toLowerCase().includes("received:") || trimmed.toLowerCase().includes("return-path:"))) return "EML";
+  return "UNKNOWN";
 }
 
+// REAL DATA RESOURCES
+
 async function callDisify(email: string): Promise<string> {
+  const apiKey = process.env.DISIFY_API_KEY;
+  const url = `https://www.disify.com/api/email/${encodeURIComponent(email)}`;
+  const headers: any = {};
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  
   try {
-    const apiKey = process.env.DISIFY_API_KEY;
-    const url = `https://www.disify.com/api/email/${encodeURIComponent(email)}`;
-    const headers: any = {};
-    if (apiKey) {
-      // Assuming Disify might use an API key in headers if configured
-      headers["Authorization"] = `Bearer ${apiKey}`;
-    }
-    
     const res = await fetch(url, { headers });
     if (!res.ok) return "";
     const data = await res.json();
-    return `[DISIFY: Format=${data.format}, Domain=${data.domain}, Disposable=${data.disposable}, DNS=${data.dns}, Whitelisted=${data.whitelisted}]`;
+    return `[DISIFY: FormatValid=${data.format}, Domain=${data.domain}, Disposable=${data.disposable}, DNSValid=${data.dns}, Deliverable=${data.whitelisted ? "Likely" : "Unknown"}]`;
   } catch {
     return "";
   }
 }
 
-async function callVirusTotal(type: string, input: string): Promise<string> {
+async function callVirusTotal(type: 'file' | 'ip' | 'url' | 'domain', input: string): Promise<string> {
   const apiKey = process.env.VIRUSTOTAL_API_KEY;
   if (!apiKey) return "";
+  const normalized = input.toLowerCase().trim();
+  
   try {
     let endpoint = "";
-    if (type === "IP") endpoint = `/ip_addresses/${input}`;
-    else if (type === "WEBSITE") {
+    if (type === 'file') endpoint = `/files/${normalized}`;
+    else if (type === 'ip') endpoint = `/ip_addresses/${normalized}`;
+    else if (type === 'domain') endpoint = `/domains/${normalized}`;
+    else if (type === 'url') {
       const urlId = Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
       endpoint = `/urls/${urlId}`;
-    } else if (type === "LOOKUP") endpoint = `/files/${input}`;
-    else return "";
+    }
 
     const res = await fetch(`https://www.virustotal.com/api/v3${endpoint}`, {
       headers: { "x-apikey": apiKey },
     });
-    if (!res.ok) return "";
+    
+    if (res.status === 404) return `[VIRUSTOTAL: No intelligence report found for ${normalized}]`;
+    if (!res.ok) return `[VIRUSTOTAL: API Error ${res.status}]`;
+    
     const data = await res.json();
-    const stats = data.data?.attributes?.last_analysis_stats;
+    const attrs = data.data?.attributes;
+    const stats = attrs?.last_analysis_stats;
     if (!stats) return "";
-    return `[VIRUSTOTAL: Malicious=${stats.malicious}, Suspicious=${stats.suspicious}, Harmless=${stats.harmless}, Undetected=${stats.undetected}]`;
+    
+    let info = `[VIRUSTOTAL: Malicious=${stats.malicious}, Suspicious=${stats.suspicious}, Harmless=${stats.harmless}, Undetected=${stats.undetected}]`;
+    
+    if (attrs.last_analysis_results?.Microsoft) {
+      info += ` [Microsoft Intelligence: ${attrs.last_analysis_results.Microsoft.result}]`;
+    }
+    if (attrs.names?.[0]) info += ` [Filename: ${attrs.names[0]}]`;
+    if (attrs.whois) info += ` [WHOIS snippet: ${attrs.whois.substring(0, 100).replace(/\n/g, " ")}...]`;
+    
+    return info;
   } catch {
     return "";
   }
@@ -111,15 +132,28 @@ async function callAbuseIPDB(ip: string): Promise<string> {
     });
     if (!res.ok) return "";
     const { data } = await res.json();
-    return `[ABUSEIPDB: Confidence Score=${data.abuseConfidenceScore}%, Reports=${data.totalReports}, Country=${data.countryCode}, Usage=${data.usageType}]`;
+    return `[ABUSEIPDB: Score=${data.abuseConfidenceScore}%, Reports=${data.totalReports}, Country=${data.countryCode}, LastReported=${data.lastReportedAt || "never"}]`;
   } catch {
     return "";
   }
 }
 
-const SYSTEM_PROMPT = `You are ScamScanner, a digital forensic assistant. You must only make claims supported by the provided REAL_CONTEXT or directly observable from USER_INPUT.
+async function callRDAP(domain: string): Promise<string> {
+  try {
+    const res = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`);
+    if (!res.ok) return "";
+    const data = await res.json();
+    const events = data.events || [];
+    const registration = events.find((e: any) => e.eventAction === 'registration');
+    return `[RDAP: RegisteredAt=${registration?.eventDate || "unknown"}, Registrar=${data.port43 || "unknown"}]`;
+  } catch {
+    return "";
+  }
+}
 
-Return ONLY valid JSON in this exact shape:
+const SYSTEM_PROMPT = `You are ScamScanner, a digital forensic assistant. You must only make claims supported by REAL_CONTEXT or directly observable from USER_INPUT.
+
+Return ONLY valid JSON in this exact format:
 {
   "legitimacyPercentage": <number 0-100>,
   "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL>",
@@ -130,34 +164,23 @@ Return ONLY valid JSON in this exact shape:
       "severity": "<CRITICAL | WARNING | INFO>",
       "description": "<evidence-backed explanation>"
     }
-  ]
+  ],
+  "sourcesChecked": ["<source names>"],
+  "limitations": ["<missing or unavailable sources>"]
 }
 
 Rules:
 - Do not invent data.
-- Do not guess exact breach counts, geolocation, domain age, WHOIS ownership, malware detections, blacklist status, abuse confidence scores, or mailbox existence.
-- Only say mailbox existence is verified if a real email validation service confirms it.
-- If only Disify is available, describe the result as basic email validation unless it explicitly confirms deliverability.
-- If real context is missing, say the analysis is heuristic or limited.
-- Every forensic signal must be tied to REAL_CONTEXT, USER_INPUT, or clearly labeled as heuristic.
-- Output JSON only.
-- No markdown.
-- No code fences.
-- No extra text.`;
-
-function isProviderError(err: any): boolean {
-  const msg = (err.message || "").toLowerCase();
-  return (
-    msg.includes("429") ||
-    msg.includes("rate limit") ||
-    msg.includes("quota") ||
-    msg.includes("tpd") ||
-    msg.includes("tpm") ||
-    msg.includes("unavailable") ||
-    msg.includes("overloaded") ||
-    msg.includes("rate_limit")
-  );
-}
+- Do not guess VirusTotal detections. Cite VT if provided.
+- Do not guess AbuseIPDB scores. Cite AbuseIPDB if provided.
+- Do not guess mailbox existence.
+- Do not guess WHOIS/domain age.
+- Do not guess Microsoft malware intelligence results.
+- If a source is unavailable or missing from REAL_CONTEXT, list it in limitations.
+- If no source confirms maliciousness, do not call it malicious.
+- If evidence is limited, say the result is heuristic.
+- Every forensic signal must cite a source name or say “heuristic”.
+- Output JSON only. No markdown. No code fences.`;
 
 async function callAIProvider(url: string, apiKey: string, model: string, message: string): Promise<string> {
   const res = await fetch(url, {
@@ -175,7 +198,7 @@ async function callAIProvider(url: string, apiKey: string, model: string, messag
         { role: "user", content: message },
       ],
       max_tokens: 1024,
-      temperature: 0.1, // Lower temperature for more consistent JSON
+      temperature: 0.1,
     }),
   });
 
@@ -190,7 +213,7 @@ async function callAIProvider(url: string, apiKey: string, model: string, messag
   return content;
 }
 
-async function performAnalysisWithFallback(message: string): Promise<{ data: string; provider: string; model: string }> {
+async function performAnalysisWithFallback(message: string): Promise<{ data: string; provider: string; model: string; errors?: any }> {
   const groqKey = process.env.GROQ_API_KEY;
   const openrouterKey = process.env.OPENROUTER_API_KEY;
 
@@ -198,141 +221,166 @@ async function performAnalysisWithFallback(message: string): Promise<{ data: str
     throw new Error("No AI provider keys configured. Add GROQ_API_KEY or OPENROUTER_API_KEY in Vercel.");
   }
 
-  // 1. Primary: Groq
+  const providerErrors: any = {};
+
   if (groqKey) {
-    const groqModel = "llama-3.1-8b-instant";
+    const model = "llama-3.1-8b-instant";
     try {
-      const result = await callAIProvider(
-        "https://api.groq.com/openai/v1/chat/completions",
-        groqKey,
-        groqModel,
-        message
-      );
-      return { data: result, provider: "groq", model: groqModel };
-    } catch (err) {
-      if (!isProviderError(err)) throw err;
-      console.warn("Groq failed/rate-limited, falling back to OpenRouter...");
+      const result = await callAIProvider("https://api.groq.com/openai/v1/chat/completions", groqKey, model, message);
+      return { data: result, provider: "groq", model };
+    } catch (err: any) {
+      providerErrors.groq = err.message;
+      console.warn("Groq failed, trying OpenRouter...");
     }
   }
 
-  // 2. Secondary: OpenRouter Fallbacks
   if (openrouterKey) {
     const models = [
-      "google/gemini-2.0-flash-exp:free",
-      "meta-llama/llama-3.2-3b-instruct:free",
       "meta-llama/llama-3.1-8b-instruct:free",
       "google/gemma-2-9b-it:free",
       "mistralai/mistral-7b-instruct:free",
-      "openrouter/auto" // Let OpenRouter decide if others fail
+      "openrouter/auto"
     ];
 
     for (const model of models) {
       try {
-        const result = await callAIProvider(
-          "https://openrouter.ai/api/v1/chat/completions",
-          openrouterKey,
-          model,
-          message
-        );
-        return { data: result, provider: "openrouter", model: model };
+        const result = await callAIProvider("https://openrouter.ai/api/v1/chat/completions", openrouterKey, model, message);
+        return { data: result, provider: "openrouter", model };
       } catch (err: any) {
-        console.warn(`OpenRouter fallback model ${model} failed: ${err.message}`);
+        if (!providerErrors.openrouter) providerErrors.openrouter = [];
+        providerErrors.openrouter.push(`${model}: ${err.message}`);
       }
     }
   }
 
-  throw new Error("All AI providers (Groq and OpenRouter) are currently unavailable. Please try again later.");
+  const error: any = new Error("All AI providers are currently unavailable.");
+  error.providerErrors = providerErrors;
+  throw error;
 }
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { action, type, input } = req.body ?? {};
-
-  // Alias Resolution
-  const resolvedAction = 
-    action === "health" ? "status" :
-    action === "scan" ? "analyze" :
-    action === "email_context" ? "hibp" :
-    action;
-
-  if (resolvedAction === "hibp") {
-    try {
-      const results = [];
-      if (type === "EMAIL" || type === "MAILBOX") {
-        results.push(await callHIBP(input));
-        results.push(await callDisify(input));
-      }
-      return res.json({ context: results.filter(Boolean).join("\n") });
-    } catch {
-      return res.status(500).json({ error: "Context gathering failed" });
-    }
-  }
+  const { action, type, input } = (req.body || {}) as { action?: string; type?: string; input?: string };
+  const resolvedAction = (action === "health" ? "status" : action === "scan" ? "analyze" : action) || "";
 
   if (resolvedAction === "status") {
     try {
       const { provider, model } = await performAnalysisWithFallback("hi");
       return res.json({ ok: true, status: "OPERATIONAL", provider, model });
     } catch (err: any) {
-      return res.json({ ok: false, status: "API_ERROR", message: err.message });
+      return res.json({ ok: false, status: "API_ERROR", message: err.message, errors: err.providerErrors });
     }
   }
 
   if (resolvedAction === "analyze") {
-    const normalizedInput = String(input || "").trim();
+    if (!input || !type) return res.status(400).json({ error: "Missing type or input" });
+    
+    // Check type compatibility
+    const detected = detectInputType(input);
+    const isValid = 
+      (type === "EMAIL" && detected === "EMAIL") ||
+      (type === "IP" && detected === "IP") ||
+      (type === "LOOKUP" && ["SHA256", "SHA1", "MD5", "DOMAIN", "URL", "IP"].includes(detected)) ||
+      (type === "WEBSITE" && ["URL", "DOMAIN"].includes(detected)) ||
+      (type === "EML" && detected === "EML");
+
+    if (!isValid && detected !== "UNKNOWN") {
+      return res.status(400).json({
+        error: "WRONG_INPUT_TYPE",
+        message: `This looks like ${detected}. Please use the appropriate tab.`
+      });
+    }
+
+    const normalizedInput = input.trim();
     const cacheKey = `${type}:${normalizedInput}`;
     const cached = scanCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiresAt) {
-      return res.json({ success: true, data: cached.result, cached: true });
-    }
+    if (cached && Date.now() < cached.expiresAt) return res.json({ success: true, data: cached.result, cached: true });
 
     const ip = getIP(req);
     const { allowed, remaining, resetAt } = checkRateLimit(ip);
-
     if (!allowed) {
-      const mins = Math.ceil((resetAt - Date.now()) / 60000);
       return res.status(429).json({
         error: "RATE_LIMITED",
-        message: `Scan limit reached (${RATE_LIMIT} scans/hour). Try again in ${mins} minute${mins !== 1 ? "s" : ""}.`,
+        message: `Scan limit reached (5 scans/hour). Try again in ${Math.ceil((resetAt - Date.now()) / 60000)} minutes.`
       });
     }
 
     try {
-      // Gather REAL_CONTEXT
-      const contextParts = [];
-      if (type === "EMAIL" || type === "MAILBOX") {
-        contextParts.push(await callDisify(normalizedInput));
-        contextParts.push(await callHIBP(normalizedInput));
-      } else if (type === "IP") {
-        contextParts.push(await callAbuseIPDB(normalizedInput));
-        contextParts.push(await callVirusTotal("IP", normalizedInput));
-      } else if (type === "WEBSITE") {
-        contextParts.push(await callVirusTotal("WEBSITE", normalizedInput));
-      } else if (type === "LOOKUP") {
-        contextParts.push(await callVirusTotal("LOOKUP", normalizedInput));
+      const contextParts: string[] = [];
+      const sourcesUsed: string[] = [];
+      const limitations: string[] = [];
+
+      // 1. DISIFY
+      if (detected === "EMAIL") {
+        const d = await callDisify(normalizedInput);
+        if (d) { contextParts.push(d); sourcesUsed.push("Disify"); }
+        else limitations.push("Disify unavailable");
       }
 
-      const realContext = contextParts.filter(Boolean).join("\n") || "No real API data available for this input.";
+      // 2. VIRUSTOTAL
+      const vtType = 
+        detected === "IP" ? "ip" : 
+        detected === "DOMAIN" ? "domain" : 
+        detected === "URL" ? "url" : 
+        ["SHA256", "SHA1", "MD5"].includes(detected) ? "file" : 
+        null;
       
-      const prompt = `REAL_CONTEXT:\n${realContext}\n\nUSER_INPUT:\n${normalizedInput}\n\nSCAN_TYPE:\n${type}`;
+      if (vtType) {
+        const vt = await callVirusTotal(vtType, normalizedInput);
+        if (vt) { contextParts.push(vt); sourcesUsed.push("VirusTotal"); }
+        else limitations.push("VirusTotal unavailable or no record");
+      }
+
+      // 3. ABUSEIPDB
+      if (detected === "IP") {
+        const a = await callAbuseIPDB(normalizedInput);
+        if (a) { contextParts.push(a); sourcesUsed.push("AbuseIPDB"); }
+        else limitations.push("AbuseIPDB unavailable");
+      }
+
+      // 4. RDAP
+      if (detected === "DOMAIN") {
+        const r = await callRDAP(normalizedInput);
+        if (r) { contextParts.push(r); sourcesUsed.push("RDAP"); }
+        else limitations.push("RDAP unavailable");
+      }
+
+      // 5. EML EXTRACTION
+      if (detected === "EML") {
+        const urls = [...new Set(normalizedInput.match(/https?:\/\/[^\s"'<>]+(?:\.[a-z]{2,})/gi) || [])].slice(0, 2);
+        const ips = [...new Set(normalizedInput.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/g) || [])].slice(0, 2);
+        for (const url of urls) {
+          const v = await callVirusTotal("url", url);
+          if (v) contextParts.push(`[EML_URL: ${url}] ${v}`);
+        }
+        for (const i of ips) {
+          const a = await callAbuseIPDB(i);
+          if (a) contextParts.push(`[EML_IP: ${i}] ${a}`);
+        }
+        sourcesUsed.push("Header Analysis");
+      }
+
+      const realContext = contextParts.filter(Boolean).join("\n") || "No real API data available. Analysis will be heuristic.";
+      const prompt = `REAL_CONTEXT:\n${realContext}\n\nUSER_INPUT:\n${normalizedInput}\n\nSCAN_TYPE:\n${type}\n\nSOURCES_USED:\n${sourcesUsed.join(", ")}\n\nLIMITATIONS:\n${limitations.join(", ")}`;
 
       const { data: rawJson, provider } = await performAnalysisWithFallback(prompt);
-      
       const jsonMatch = rawJson.match(/\{[\s\S]*\}/);
-      const cleanedJson = JSON.parse(jsonMatch ? jsonMatch[0] : rawJson);
+      if (!jsonMatch) throw new Error("AI provider returned non-JSON response.");
       
-      scanCache.set(cacheKey, { result: cleanedJson, expiresAt: Date.now() + CACHE_TTL_MS });
-      
-      return res.json({ success: true, data: cleanedJson, provider, remaining });
+      const result = JSON.parse(jsonMatch[0]);
+      scanCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+
+      return res.json({ success: true, data: result, provider, remaining });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || "Analysis failed" });
+      return res.status(500).json({ error: err.message || "Analysis failed", providerErrors: err.providerErrors });
     }
   }
 
   return res.status(400).json({ 
     error: "Invalid action", 
-    expectedActions: ["status", "hibp", "analyze"],
-    receivedAction: action
+    expectedActions: ["status", "analyze"],
+    receivedAction: action 
   });
 }
 

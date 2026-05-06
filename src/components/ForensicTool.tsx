@@ -11,37 +11,37 @@ interface ToolSelectorProps {
 const TOOLS = [
   {
     type: 'LOOKUP' as ToolType,
-    label: 'Domain Lookup',
+    label: 'Threat & Hash Lookup',
     icon: Search,
-    description: 'Comprehensive domain, URL, and malware intelligence. Analyzes safety, DNS records, and reputation. For hashes, it references Microsoft Security Intelligence and VirusTotal.',
-    placeholder: 'Enter domain, hash (SHA256), or entity...'
+    description: 'Comprehensive malware & entity intelligence. Analyzes hashes (SHA256/SHA1/MD5), domains, and URLs using VirusTotal and Microsoft Malware Intelligence.',
+    placeholder: 'Enter Hash, Domain, URL, or IP...'
   },
   {
     type: 'EMAIL' as ToolType,
     label: 'Email Verifier',
     icon: Radar,
-    description: 'MailboxValidator simulation. Checks syntax, existence, disposable status, and reputation.',
+    description: 'Email forensics using Disify and VirusTotal. Checks delivery status, disposable status, and known malicious sender reputation.',
     placeholder: 'Enter email address to verify...'
   },
   {
     type: 'IP' as ToolType,
     label: 'IP Analysis',
     icon: Globe,
-    description: 'AbuseIPDB simulation. Detects VPN/Tor nodes, abuse scores, and geolocation data.',
+    description: 'Advanced IP reputation analysis using AbuseIPDB and VirusTotal. Detects malicious exit nodes, SOC alerts, and geolocation.',
     placeholder: 'Enter IP address or CIDR...'
   },
   {
     type: 'WEBSITE' as ToolType,
     label: 'Web Scanner',
     icon: MousePointer2,
-    description: 'URL safety, SSL certificates, and forensic phishing patterns.',
+    description: 'URL safety and WHOIS analysis. Scans for phishing templates, SSL validity, and domain age using VirusTotal.',
     placeholder: 'Enter URL or domain to scan (e.g. example.com)...'
   },
   {
     type: 'EML' as ToolType,
     label: 'EML Forensic',
     icon: FileSearch,
-    description: 'Abnormal Security behavior analysis. Analyzes email structure, identity deception, typosquatting, and attack patterns.',
+    description: 'Header forensics and MXToolbox analysis. Detects identity deception, spoofed hops, and malicious routing patterns.',
     placeholder: 'Drag EML file here or enter raw source...'
   }
 ];
@@ -53,6 +53,38 @@ export function ToolSelector({ onScan, loading }: ToolSelectorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentTool = TOOLS.find(t => t.type === activeTool)!;
+
+  const handleInputChange = (val: string) => {
+    setInputValue(val);
+    const trimmed = val.trim();
+    if (trimmed.length < 3) return;
+
+    // Auto-routing logic
+    // Email
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setActiveTool('EMAIL');
+    }
+    // IP (IPv4 or IPv6 basic)
+    else if (/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\/\d+)?$/.test(trimmed) || /^([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}$/.test(trimmed)) {
+      setActiveTool('IP');
+    }
+    // Hash (MD5: 32, SHA1: 40, SHA256: 64)
+    else if (/^[a-fA-F0-9]{32}$/.test(trimmed) || /^[a-fA-F0-9]{40}$/.test(trimmed) || /^[a-fA-F0-9]{64}$/.test(trimmed)) {
+      setActiveTool('LOOKUP');
+    }
+    // URL (Starting with http or having a clear domain structure)
+    else if (/^https?:\/\//.test(trimmed) || (/^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$/.test(trimmed) && !trimmed.includes('@'))) {
+      if (trimmed.includes('/') || trimmed.startsWith('http')) {
+        setActiveTool('WEBSITE');
+      } else {
+        setActiveTool('LOOKUP'); // Naked domains often go to threat lookup
+      }
+    }
+    // EML Detection
+    else if (trimmed.length > 100 && (trimmed.toLowerCase().includes('received:') || trimmed.toLowerCase().includes('return-path:'))) {
+      setActiveTool('EML');
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,7 +195,7 @@ export function ToolSelector({ onScan, loading }: ToolSelectorProps) {
               <div className="flex flex-col gap-3">
                 <textarea
                   value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
+                  onChange={(e) => handleInputChange(e.target.value)}
                   placeholder={currentTool.placeholder}
                   className="block w-full pl-10 pr-12 py-4 bg-black/50 border border-white/10 text-white text-sm focus:outline-none focus:border-electric transition-colors font-mono placeholder:text-white/10 min-h-[120px] resize-none"
                   disabled={loading}
@@ -193,7 +225,7 @@ export function ToolSelector({ onScan, loading }: ToolSelectorProps) {
               <input
                 type="text"
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value)}
                 placeholder={currentTool.placeholder}
                 className="block w-full pl-10 pr-12 py-4 bg-black/50 border border-white/10 text-white text-sm focus:outline-none focus:border-electric transition-colors font-mono placeholder:text-white/10"
                 disabled={loading}
