@@ -190,7 +190,7 @@ async function callAIProvider(url: string, apiKey: string, model: string, messag
   return content;
 }
 
-async function performAnalysisWithFallback(message: string): Promise<{ data: string; provider: string }> {
+async function performAnalysisWithFallback(message: string): Promise<{ data: string; provider: string; model: string }> {
   const groqKey = process.env.GROQ_API_KEY;
   const openrouterKey = process.env.OPENROUTER_API_KEY;
 
@@ -200,26 +200,30 @@ async function performAnalysisWithFallback(message: string): Promise<{ data: str
 
   // 1. Primary: Groq
   if (groqKey) {
+    const groqModel = "llama-3.1-8b-instant";
     try {
       const result = await callAIProvider(
         "https://api.groq.com/openai/v1/chat/completions",
         groqKey,
-        "llama-3.1-8b-instant",
+        groqModel,
         message
       );
-      return { data: result, provider: "groq" };
+      return { data: result, provider: "groq", model: groqModel };
     } catch (err) {
       if (!isProviderError(err)) throw err;
-      console.warn("Groq failed/rate-limited, falling back...");
+      console.warn("Groq failed/rate-limited, falling back to OpenRouter...");
     }
   }
 
   // 2. Secondary: OpenRouter Fallbacks
   if (openrouterKey) {
     const models = [
+      "google/gemini-2.0-flash-exp:free",
+      "meta-llama/llama-3.2-3b-instruct:free",
       "meta-llama/llama-3.1-8b-instruct:free",
       "google/gemma-2-9b-it:free",
       "mistralai/mistral-7b-instruct:free",
+      "openrouter/auto" // Let OpenRouter decide if others fail
     ];
 
     for (const model of models) {
@@ -230,14 +234,14 @@ async function performAnalysisWithFallback(message: string): Promise<{ data: str
           model,
           message
         );
-        return { data: result, provider: `openrouter:${model}` };
-      } catch (err) {
-        console.warn(`Fallback model ${model} failed, trying next...`);
+        return { data: result, provider: "openrouter", model: model };
+      } catch (err: any) {
+        console.warn(`OpenRouter fallback model ${model} failed: ${err.message}`);
       }
     }
   }
 
-  throw new Error("All AI providers are currently unavailable.");
+  throw new Error("All AI providers (Groq and OpenRouter) are currently unavailable. Please try again later.");
 }
 
 export default async function handler(req: any, res: any) {
@@ -267,8 +271,8 @@ export default async function handler(req: any, res: any) {
 
   if (resolvedAction === "status") {
     try {
-      await performAnalysisWithFallback("hi");
-      return res.json({ ok: true, status: "OPERATIONAL" });
+      const { provider, model } = await performAnalysisWithFallback("hi");
+      return res.json({ ok: true, status: "OPERATIONAL", provider, model });
     } catch (err: any) {
       return res.json({ ok: false, status: "API_ERROR", message: err.message });
     }
