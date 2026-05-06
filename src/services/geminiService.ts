@@ -1,37 +1,55 @@
-export async function checkApiStatus() {
+import { ScanResult, ToolType } from "../types";
+
+export async function checkApiStatus(): Promise<{ ok: boolean; status: string }> {
   try {
     const res = await fetch("/api/gemini", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "status" })
+      body: JSON.stringify({ action: "status" }),
     });
     return await res.json();
   } catch {
-    return { ok: false, status: "OFFLINE" };
+    return { ok: false, status: "API_ERROR" };
   }
 }
 
-export async function performForensicAnalysis(type: string, input: string) {
-  // Delegate both data gathering AND AI analysis to the server
-  // This allows the server to manage fallbacks between Gemini, Groq, and OpenRouter securely
+export async function performForensicAnalysis(type: ToolType, input: string): Promise<ScanResult> {
+  let hibpContext = "";
+  if (type === "EMAIL" || type === "MAILBOX") {
+    try {
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "hibp", input }),
+      });
+      if (res.ok) {
+        const { context } = await res.json();
+        hibpContext = context || "";
+      }
+    } catch {
+      // proceed without HIBP data
+    }
+  }
+
   const res = await fetch("/api/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "analyze", type, input })
+    body: JSON.stringify({ action: "analyze", type, input: `${input}${hibpContext}` }),
   });
 
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.message || `Analysis failed with status ${res.status}`);
+    if (err.error === "RATE_LIMITED") throw new Error(`RATE_LIMITED: ${err.message}`);
+    throw new Error(err.error || "Analysis failed");
   }
 
-  const { result } = await res.json();
-
+  const { data } = await res.json();
   return {
-    id: Math.random().toString(36).substring(7),
+    ...data,
+    userId: "anonymous",
     type,
     input,
-    ...result,
-    timestamp: Date.now()
+    createdAt: Date.now(),
+    id: Math.random().toString(36).substring(2, 15),
   };
 }
