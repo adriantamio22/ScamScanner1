@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { HistoryRecord } from "../types";
+import { HistoryRecord, ToolType } from "../types";
 import { format } from "date-fns";
 import { GlassCard, VerdictBadge } from "./ui/Primitives";
-import { Clock, Search as SearchIcon, X } from "lucide-react";
+import { Clock, Search as SearchIcon, X, Shield, Globe, Mail, FileText, Activity } from "lucide-react";
 
 interface HistorySidebarProps {
   history: HistoryRecord[];
@@ -10,6 +10,17 @@ interface HistorySidebarProps {
   onClear: () => void;
   onDelete: (id: string) => void;
 }
+
+const getToolIcon = (type: ToolType) => {
+  switch (type) {
+    case 'LOOKUP': return SearchIcon;
+    case 'EMAIL': return Mail;
+    case 'IP': return Activity;
+    case 'WEBSITE': return Globe;
+    case 'EML': return FileText;
+    default: return Shield;
+  }
+};
 
 export function HistorySidebar({ history, onSelect, onClear, onDelete }: HistorySidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -35,7 +46,7 @@ export function HistorySidebar({ history, onSelect, onClear, onDelete }: History
           {history.length > 0 && (
             <button 
               onClick={onClear}
-              className="text-[9px] font-bold text-malicious/60 hover:text-malicious transition-colors uppercase tracking-widest px-2 py-1 border border-malicious/20 hover:border-malicious/40 rounded"
+              className="text-[9px] font-bold text-malicious/60 hover:text-malicious transition-colors uppercase tracking-widest px-2 py-1 border border-malicious/20 rounded"
             >
               Clear
             </button>
@@ -72,59 +83,76 @@ export function HistorySidebar({ history, onSelect, onClear, onDelete }: History
             {searchQuery ? "No matching records" : "No records found"}
           </div>
         ) : (
-          filteredHistory.map((record) => (
-            <div key={record.id} className="group relative border-b border-white/5 last:border-0">
-              <button
-                onClick={() => onSelect(record)}
-                className="w-full text-left p-4 hover:bg-white/5 transition-colors relative overflow-hidden pr-12"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[9px] px-1.5 py-0.5 bg-electric/10 border border-electric/20 font-bold text-electric uppercase tracking-tighter">{record.type}</span>
-                  <span className="text-[9px] text-white/30 font-mono italic">{format(record.createdAt, "MMM dd HH:mm")}</span>
-                </div>
-                <div className="text-[11px] truncate mb-2 text-white/80 font-medium group-hover:text-white transition-colors">
-                  {record.input}
-                </div>
-                <div className="flex justify-between items-center mt-auto">
-                  <div className="flex items-center gap-2">
+          filteredHistory.map((record) => {
+            const Icon = getToolIcon(record.type);
+            const shortId = record.id.substring(0, 8).toUpperCase();
+            
+            return (
+              <div key={record.id} className="group relative border-b border-white/5 last:border-0 outline-none">
+                <button
+                  onClick={() => onSelect(record)}
+                  className="w-full text-left p-4 hover:bg-white/[0.03] transition-all relative overflow-hidden pr-12 group-focus:bg-white/[0.05]"
+                >
+                  {/* Background Detail */}
+                  <div className="absolute top-1/2 -translate-y-1/2 -right-4 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity pointer-events-none z-0">
+                    <Icon className="w-20 h-20" />
+                  </div>
+                  <div className="absolute top-0 left-0 w-full h-full opacity-[0.02] pointer-events-none" 
+                       style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '12px 12px' }} />
+
+                  <div className="flex justify-between items-center mb-2 relative z-10">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-mono text-electric/40">[{shortId}]</span>
+                      <Icon className="w-2.5 h-2.5 text-white/20 group-hover:text-electric transition-colors" />
+                    </div>
+                    <span className="text-[9px] text-white/30 font-mono tracking-tighter">{format(record.createdAt, "HH:mm:ss")}</span>
+                  </div>
+
+                  <div className="text-[11px] truncate mb-3 text-white/70 font-medium group-hover:text-white transition-colors relative z-10">
+                    {record.input}
+                  </div>
+
+                  <div className="flex items-center gap-4 relative z-10">
                     <VerdictBadge verdict={record.verdict} />
-                    {record.classification && (
-                      <span className="text-[8px] font-mono text-white/30 truncate uppercase tracking-tighter border-l border-white/10 pl-2">
-                        {record.classification}
+                    <div className="flex items-center gap-1 bg-black/20 px-1.5 py-0.5 rounded border border-white/5">
+                      <span className={`text-[10px] font-bold font-mono tracking-tighter ${
+                        record.legitimacyPercentage > 70 ? 'text-emerald-400' : 
+                        record.legitimacyPercentage > 30 ? 'text-amber-400' : 
+                        'text-red-400'
+                      }`}>
+                        {record.legitimacyPercentage}%
                       </span>
-                    )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 min-w-[50px] justify-end">
-                    <span className={`text-[10px] font-black font-mono tracking-tighter ${
-                      record.legitimacyPercentage > 70 ? 'text-emerald-400' : 
-                      record.legitimacyPercentage > 30 ? 'text-amber-400' : 
-                      'text-red-400'
-                    }`}>
-                      {record.legitimacyPercentage}%
-                    </span>
-                  </div>
-                </div>
-                <div className="absolute inset-y-0 left-0 w-[2px] bg-electric opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(record.id);
-                }}
-                className="absolute top-1/2 -translate-y-1/2 right-3 p-2 text-white/10 hover:text-malicious hover:bg-malicious/10 rounded transition-all opacity-0 group-hover:opacity-100"
-                title="Delete Record"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))
+
+                  {/* Status Indicator Bar */}
+                  <div className={`absolute inset-y-0 left-0 w-[3px] transition-all duration-300 ${
+                    record.verdict === 'MALICIOUS_THREAT' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' :
+                    record.verdict === 'SUSPICIOUS_ACTIVITY' ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]' :
+                    'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                  } ${record.verdict === 'MALICIOUS_THREAT' ? 'animate-pulse' : ''}`} />
+                </button>
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(record.id);
+                  }}
+                  className="absolute top-1/2 -translate-y-1/2 right-3 p-2 text-white/5 hover:text-red-400 hover:bg-red-400/10 rounded transition-all opacity-0 group-hover:opacity-100 z-20"
+                  title="Delete Case"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
       
       {/* Footer Info */}
       <div className="p-3 bg-black/40 border-t border-white/5 flex justify-between items-center">
-        <span className="text-[8px] text-white/20 uppercase tracking-[0.2em] font-bold">
-          {filteredHistory.length} Entry Found
+        <span className="text-[8px] text-white/20 uppercase tracking-[0.2em] font-bold font-mono">
+          SYSTEM_LOG: {filteredHistory.length} ENTRIES
         </span>
         <div className="flex gap-1">
            <div className="w-1 h-1 bg-electric/40 rounded-full animate-pulse" />
