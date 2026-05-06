@@ -40,7 +40,7 @@ export async function performForensicAnalysis(type: ToolType, input: string): Pr
   if (!res.ok) {
     const err = await res.json();
     if (err.error === "RATE_LIMITED") throw new Error(`RATE_LIMITED: ${err.message}`);
-    throw new Error(err.error || "Analysis failed");
+    throw new Error(err.message || err.error || "Analysis failed");
   }
 
   const { data } = await res.json();
