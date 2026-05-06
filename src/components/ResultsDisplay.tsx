@@ -1,6 +1,6 @@
 import { ScanResult } from "../types";
 import { GlassCard, VerdictBadge, PulseIndicator } from "./ui/Primitives";
-import { Radar, AlertTriangle, CheckCircle, Info, ChevronRight, Activity } from "lucide-react";
+import { Radar, AlertTriangle, CheckCircle, Info, ChevronRight, Activity, Search } from "lucide-react";
 import { motion } from "motion/react";
 
 interface ResultsDisplayProps {
@@ -62,24 +62,33 @@ export function ResultsDisplay({ result, loading, error }: ResultsDisplayProps) 
     <GlassCard className="h-full" id="results-display">
       <div className="flex flex-col h-full">
         {/* Header Section */}
-        <div className="flex justify-between items-start mb-6 border-b border-white/5 pb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-bold text-electric bg-electric/10 px-1.5 py-0.5">CASE ID: {result.id.toUpperCase()}</span>
-              {result.entityType && (
-                <span className="text-[10px] font-bold text-white/50 bg-white/5 border border-white/10 px-1.5 py-0.5 uppercase tracking-tighter">
-                  TYPE: {result.entityType}
-                </span>
-              )}
+        <div className="flex justify-between items-start mb-6 border-b border-white/5 pb-6">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-electric bg-electric/20 border border-electric/30 px-2 py-0.5 rounded-sm">CASE_ID_{result.id.slice(0, 8).toUpperCase()}</span>
               <VerdictBadge verdict={result.verdict} />
+              {result.classification && (
+                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 border border-white/10 rounded-sm">
+                   <div className="w-1 h-1 bg-white/30 rounded-full" />
+                   <span className="text-[9px] font-mono uppercase tracking-tighter text-white/50">
+                     TARGET: <span className="text-electric/80 font-bold">{result.classification}</span>
+                   </span>
+                 </div>
+              )}
             </div>
-            <h2 className="text-2xl font-bold tracking-tighter text-white truncate max-w-md">
+            <h2 className="text-2xl font-black tracking-tighter text-white truncate max-w-2xl">
               {result.input}
             </h2>
           </div>
           <div className="text-right">
             <div className="text-[10px] text-white/40 uppercase mb-1">Legitimacy Score</div>
-            <div className="text-4xl font-bold tracking-tighter text-electric">
+            <div 
+              className={`text-4xl font-black tracking-tighter ${
+                result.legitimacyPercentage > 70 ? 'text-emerald-400' : 
+                result.legitimacyPercentage > 30 ? 'text-amber-400' : 
+                'text-red-400'
+              }`}
+            >
               {result.legitimacyPercentage}<span className="text-sm opacity-50">%</span>
             </div>
           </div>

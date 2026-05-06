@@ -83,7 +83,7 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authSuccess, setAuthSuccess] = useState("");
-  const [portalStatus, setPortalStatus] = useState({ ok: true, status: "OPERATIONAL", info: "All systems normal" });
+  const [portalStatus, setPortalStatus] = useState({ ok: true, status: "OPERATIONAL" });
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isClearHistoryConfirmOpen, setIsClearHistoryConfirmOpen] = useState(false);
   const [isDeleteCaseConfirmOpen, setIsDeleteCaseConfirmOpen] = useState(false);
@@ -163,6 +163,7 @@ export default function App() {
         type: result.type,
         input: result.input,
         verdict: result.verdict,
+        classification: result.classification || "UNKNOWN",
         legitimacyPercentage: result.legitimacyPercentage,
         executiveSummary: result.executiveSummary || "Analysis summary unavailable.",
         forensicSignals: result.forensicSignals || [],
@@ -400,10 +401,7 @@ export default function App() {
           <div className="hidden lg:flex items-center gap-3 border-l border-white/10 pl-6">
             <div className="text-right mr-3">
               <div className="text-[9px] text-white/30 uppercase font-bold">Portal Status</div>
-              <div 
-                className={`text-[10px] font-mono uppercase ${portalStatus.status === 'OPERATIONAL' ? 'text-legit' : portalStatus.status === 'DEGRADED' ? 'text-warning' : 'text-malicious'}`}
-                title={portalStatus.info}
-              >
+              <div className={`text-[10px] font-mono uppercase ${portalStatus.ok ? 'text-legit' : 'text-malicious'}`}>
                 {portalStatus.status}
               </div>
             </div>

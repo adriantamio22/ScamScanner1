@@ -1,4 +1,5 @@
-const RATE_LIMIT = 25;
+
+const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const ipMap = new Map<string, { count: number; resetAt: number }>();
 
@@ -129,6 +130,7 @@ async function gatherRealData(type: string, input: string): Promise<string> {
   if (type === "LOOKUP") {
     if (vtKey) results.push(await checkVTHash(input.trim(), vtKey));
   }
+
   if (type === "EMAIL") {
     results.push(await checkEmailDisify(input.trim()));
     results.push(await checkHIBP(input.trim(), hibpKey));
@@ -138,10 +140,12 @@ async function gatherRealData(type: string, input: string): Promise<string> {
       results.push(await checkWHOIS(domain));
     }
   }
+
   if (type === "IP") {
     if (vtKey) results.push(await checkVTIP(input.trim(), vtKey));
     if (abuseKey) results.push(await checkAbuseIPDB(input.trim(), abuseKey));
   }
+
   if (type === "WEBSITE") {
     const domain = input.replace(/^https?:\/\//, "").split("/")[0];
     if (vtKey) {
@@ -150,10 +154,27 @@ async function gatherRealData(type: string, input: string): Promise<string> {
     }
     results.push(await checkWHOIS(domain));
   }
+
   if (type === "EML") {
     const ips = [...new Set(input.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) || [])].slice(0, 3);
     const domainMatches = input.match(/(?:From|Reply-To|Return-Path)[^\n]*@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi) || [];
     const domains = [...new Set(domainMatches.map((m: string) => m.split("@")[1]?.trim()).filter(Boolean))].slice(0, 2) as string[];
+    
+    // Impersonation Check: Detect Display Name vs Email mismatch
+    const fromLine = input.match(/From:.*<(.+@.+)>/i) || input.match(/From:\s*([^\n<]+)/i);
+    const displayName = fromLine ? fromLine[1].split('<')[0].trim() : "";
+    const emailMatch = input.match(/From:.*<(.+@.+)>/i);
+    const actualEmail = emailMatch ? emailMatch[1] : "";
+    
+    if (displayName && actualEmail) {
+      results.push(`[IDENTITY_ANALYSIS] Display Name: "${displayName}" | Actual Sender: ${actualEmail}`);
+    }
+
+    const replyToMatch = input.match(/Reply-To:\s*<(.+@.+)>/i) || input.match(/Reply-To:\s*(.+@.+)/i);
+    if (replyToMatch && actualEmail && replyToMatch[1] !== actualEmail) {
+      results.push(`[SENSITIVE_SIGNAL] Reply-To mismatch: ${replyToMatch[1]} (Expected: ${actualEmail})`);
+    }
+
     for (const ip of ips) {
       if (vtKey) results.push(await checkVTIP(ip, vtKey));
       if (abuseKey) results.push(await checkAbuseIPDB(ip, abuseKey));
@@ -174,69 +195,26 @@ STRICT RULES:
 - CRITICAL = VirusTotal detections > 2, AbuseIPDB score > 50, domain age < 7 days
 - WARNING = 1-2 detections, AbuseIPDB score 10-50, domain age < 30 days, disposable email
 - INFO = clean results, low scores, informational findings
-- If no API data is available for something, say so honestly
+- If no API data is available for something, set verdict to "NOT_FOUND" and legitimacyPercentage to 0.
+- EMBRACE CROSS-REFERENCING: In the executiveSummary, emphasize that the results are based on cross-referencing multiple forensic intelligence sources. 
+- AVOID REPETITION: Do not repeatedly mention specific tool names like "VirusTotal" or "AbuseIPDB" in every sentence of the summary. Use broader terms like "reputation engines", "global threat intelligence", or "forensic database correlation".
+- IMPERSONATION RADAR: Specifically look for "Display Name Spoofing" where a trusted name is used with an unrelated email. Flag "Homoglyph Attacks" (look-alike characters like 'ο' vs 'o'). Check for high-risk BEC (Business Email Compromise) patterns like Reply-To mismatches or urgency in metadata.
+- INPUT CLASSIFICATION: Identify what the input is (e.g., "Domain", "IPv4 Address", "IPv6 Address", "File Hash (SHA-1/256/MD5)", "Email Address", "Email Headers", "URL/Website").
 
 Respond ONLY with this JSON:
 {
   "legitimacyPercentage": <0-100>,
-  "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL>",
-  "executiveSummary": "<2-3 sentences citing actual findings>",
+  "verdict": "<MALICIOUS_THREAT | SUSPICIOUS_ACTIVITY | LEGIT_SIGNAL | NOT_FOUND>",
+  "detectedType": "<type>",
+  "executiveSummary": "<2-3 sentences providing a high-level technical overview. Highlight the correlation between different intelligence sources without brand-dumping.>",
   "forensicSignals": [
     { "name": "<signal>", "severity": "<CRITICAL | WARNING | INFO>", "description": "<cite the real data>" }
   ]
-}`;
-
-async function callAI(url: string, apiKey: string, model: string, message: string): Promise<string> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: message },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1024,
-      temperature: 0.2,
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || `API error ${res.status}`);
-  }
-  return (await res.json()).choices[0].message.content;
 }
+If verdict is NOT_FOUND, forensicSignals can be an empty array.`;
 
-async function callWithFallback(message: string): Promise<string> {
-  const groqKey = process.env.GROQ_API_KEY;
-  const orKey = process.env.OPENROUTER_API_KEY;
-
-  if (groqKey) {
-    try {
-      return await callAI("https://api.groq.com/openai/v1/chat/completions", groqKey, "llama-3.1-8b-instant", message);
-    } catch (err: any) {
-      console.warn("Groq failed, trying OpenRouter...", err.message);
-    }
-  }
-
-  if (orKey) {
-    const fallbackModels = [
-      "google/gemma-2-9b-it:free",
-      "mistralai/mistral-7b-instruct:free",
-      "meta-llama/llama-3.2-3b-instruct:free",
-    ];
-    for (const model of fallbackModels) {
-      try {
-        return await callAI("https://openrouter.ai/api/v1/chat/completions", orKey, model, message);
-      } catch (err: any) {
-        console.warn(`OpenRouter model ${model} failed, trying next...`);
-        continue;
-      }
-    }
-  }
-
-  throw new Error("All AI providers are currently unavailable. Please try again later.");
+function isRateLimitError(err: any): boolean {
+  return err.message?.includes("429") || err.message?.includes("rate limit") || err.message?.includes("Rate limit") || err.message?.includes("TPD") || err.message?.includes("TPM");
 }
 
 export default async function handler(req: any, res: any) {
@@ -245,12 +223,7 @@ export default async function handler(req: any, res: any) {
   const { action, type, input } = req.body ?? {};
 
   if (action === "status") {
-    try {
-      await callWithFallback("hi");
-      return res.json({ ok: true, status: "OPERATIONAL" });
-    } catch {
-      return res.json({ ok: false, status: "API_ERROR" });
-    }
+    return res.json({ ok: true, status: "OPERATIONAL" });
   }
 
   if (action === "analyze") {
@@ -266,11 +239,13 @@ export default async function handler(req: any, res: any) {
 
     try {
       const realData = await gatherRealData(type, input);
-      const message = `Scan type: ${type}\nInput: ${input}\n\nReal forensic data collected:\n${realData || "No API data available for this input."}`;
-      const rawJson = await callWithFallback(message);
-      return res.json({ success: true, data: JSON.parse(rawJson), remaining });
+      return res.json({ 
+        success: true, 
+        realData,
+        remaining 
+      });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || "Analysis failed" });
+      return res.status(500).json({ error: err.message || "Failed to gather data" });
     }
   }
 

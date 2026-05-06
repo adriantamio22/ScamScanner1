@@ -11,10 +11,10 @@ export interface ForensicSignal {
 export interface ScanResult {
   userId: string;
   type: ToolType;
-  entityType?: string;
   input: string;
   legitimacyPercentage: number;
   verdict: Verdict;
+  classification?: string;
   executiveSummary: string;
   forensicSignals: ForensicSignal[];
   createdAt: number;
@@ -24,9 +24,9 @@ export interface ScanResult {
 export interface HistoryRecord {
   id: string;
   type: ToolType;
-  entityType?: string;
   input: string;
   verdict: Verdict;
+  classification?: string;
   legitimacyPercentage: number;
   executiveSummary: string;
   forensicSignals: ForensicSignal[];

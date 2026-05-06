@@ -19,8 +19,7 @@ export function HistorySidebar({ history, onSelect, onClear, onDelete }: History
     return (
       record.input.toLowerCase().includes(query) ||
       record.type.toLowerCase().includes(query) ||
-      record.verdict.toLowerCase().includes(query) ||
-      (record.entityType && record.entityType.toLowerCase().includes(query))
+      record.verdict.toLowerCase().includes(query)
     );
   });
 
@@ -80,27 +79,29 @@ export function HistorySidebar({ history, onSelect, onClear, onDelete }: History
                 className="w-full text-left p-4 hover:bg-white/5 transition-colors relative overflow-hidden pr-12"
               >
                 <div className="flex justify-between items-start mb-2">
-                  <div className="flex gap-2">
-                    <span className="text-[9px] px-1.5 py-0.5 bg-electric/10 border border-electric/20 font-bold text-electric uppercase tracking-tighter">{record.type}</span>
-                    {record.entityType && (
-                      <span className="text-[9px] px-1.5 py-0.5 bg-white/5 border border-white/10 font-bold text-white/30 uppercase tracking-tighter">{record.entityType}</span>
-                    )}
-                  </div>
+                  <span className="text-[9px] px-1.5 py-0.5 bg-electric/10 border border-electric/20 font-bold text-electric uppercase tracking-tighter">{record.type}</span>
                   <span className="text-[9px] text-white/30 font-mono italic">{format(record.createdAt, "MMM dd HH:mm")}</span>
                 </div>
-                <div className="text-[11px] truncate mb-3 text-white/80 font-medium group-hover:text-white transition-colors">
+                <div className="text-[11px] truncate mb-2 text-white/80 font-medium group-hover:text-white transition-colors">
                   {record.input}
                 </div>
-                <div className="flex justify-between items-center">
-                  <VerdictBadge verdict={record.verdict} />
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-12 h-1 bg-white/5 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-1000 ${record.legitimacyPercentage > 70 ? 'bg-legit' : record.legitimacyPercentage > 30 ? 'bg-suspicious' : 'bg-malicious'}`}
-                        style={{ width: `${record.legitimacyPercentage}%` }}
-                      />
-                    </div>
-                    <span className="text-[9px] text-white/40 font-mono tracking-tighter">{record.legitimacyPercentage}%</span>
+                <div className="flex justify-between items-center mt-auto">
+                  <div className="flex items-center gap-2">
+                    <VerdictBadge verdict={record.verdict} />
+                    {record.classification && (
+                      <span className="text-[8px] font-mono text-white/30 truncate uppercase tracking-tighter border-l border-white/10 pl-2">
+                        {record.classification}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 min-w-[50px] justify-end">
+                    <span className={`text-[10px] font-black font-mono tracking-tighter ${
+                      record.legitimacyPercentage > 70 ? 'text-emerald-400' : 
+                      record.legitimacyPercentage > 30 ? 'text-amber-400' : 
+                      'text-red-400'
+                    }`}>
+                      {record.legitimacyPercentage}%
+                    </span>
                   </div>
                 </div>
                 <div className="absolute inset-y-0 left-0 w-[2px] bg-electric opacity-0 group-hover:opacity-100 transition-opacity" />
