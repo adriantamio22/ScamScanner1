@@ -145,13 +145,14 @@ export function ToolSelector({ onScan, loading }: ToolSelectorProps) {
               setActiveTool(tool.type);
               setInputValue("");
             }}
+            aria-label={`Select ${tool.label} tool`}
             className={`flex flex-col items-center gap-3 p-4 border transition-all relative overflow-hidden group ${
               activeTool === tool.type 
                 ? 'border-electric bg-electric/10 text-white' 
                 : 'border-white/10 bg-white/5 text-white/40 hover:border-white/30 hover:bg-white/[0.07]'
             }`}
           >
-            <tool.icon className={`w-6 h-6 ${activeTool === tool.type ? 'text-electric' : 'group-hover:text-white/60'}`} />
+            <tool.icon className={`w-6 h-6 ${activeTool === tool.type ? 'text-electric' : 'group-hover:text-white/60'}`} aria-hidden="true" />
             <span className="text-[10px] font-bold uppercase tracking-wider text-center">{tool.label}</span>
             {activeTool === tool.type && (
               <div className="absolute top-0 right-0 p-1">

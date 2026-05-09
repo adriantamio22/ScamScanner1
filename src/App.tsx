@@ -616,14 +616,46 @@ export default function App() {
       </AnimatePresence>
 
       {/* Footer Meta */}
-      <footer className="text-[9px] text-white/20 uppercase tracking-widest flex justify-between items-center border-t border-white/5 pt-4">
-        <div className="flex items-center gap-4">
-          <span>© 2026 MALICIOUS INTELLIGENCE PORTAL // SCAMSCANNER-ENGINE</span>
-          <span className="opacity-30 hover:opacity-100 transition-opacity cursor-default">DEV_UID: ADRIAN_TAMIO</span>
-        </div>
-        <div className="flex gap-4">
-          <span>FOR INTERNAL FORENSIC USE ONLY</span>
-          <span className="text-white/40">SYSTEM_UPTIME: 99.98%</span>
+      <footer className="mt-auto border-t border-white/5 pt-8 pb-4">
+        <section className="mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">Forensic Mission</h4>
+            <p className="text-[10px] leading-relaxed text-white/30 lowercase">
+              ScamScanner is an advanced bento-grid forensic environment designed for deep analysis of digital communications. Our lab specializes in eml header inspection, mailbox reputation verification, and real-time threat intelligence lookup to combat identity deception and phishing.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">Analytical Core</h4>
+            <ul className="text-[10px] text-white/30 lowercase space-y-1">
+              <li>- hash-based malware matching</li>
+              <li>- ip reputation & soc alerts</li>
+              <li>- mx-record & hops validation</li>
+              <li>- disposable email detection</li>
+            </ul>
+          </div>
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">Security Protocols</h4>
+            <p className="text-[10px] leading-relaxed text-white/30 lowercase">
+              Every scan utilizes multiple authoritative sources including VirusTotal, AbuseIPDB, and custom forensic parsers to provide high-fidelity legitimacy signals.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">Data Privacy</h4>
+            <p className="text-[10px] leading-relaxed text-white/30 lowercase">
+              Investigator sessions are secured via industry-standard encryption. Case history is locally scoped to authorized profiles and can be purged at any time.
+            </p>
+          </div>
+        </section>
+
+        <div className="text-[9px] text-white/20 uppercase tracking-widest flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-4">
+            <span>© 2026 MALICIOUS INTELLIGENCE PORTAL // SCAMSCANNER-ENGINE</span>
+            <span className="opacity-30 hover:opacity-100 transition-opacity cursor-default">DEV_UID: ADRIAN_TAMIO</span>
+          </div>
+          <div className="flex gap-4">
+            <span>FOR INTERNAL FORENSIC USE ONLY</span>
+            <span className="text-white/40">SYSTEM_UPTIME: 99.98%</span>
+          </div>
         </div>
       </footer>
 
