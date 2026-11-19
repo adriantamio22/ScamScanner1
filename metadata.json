@@ -2,5 +2,5 @@
   "name": "ScamScanner",
   "description": "A Bento Grid Digital Forensic Lab for analyzing emails, EML files, mailboxes, and IP addresses using AI-powered forensic signals.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

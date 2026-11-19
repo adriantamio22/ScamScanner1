@@ -1,3 +1,5 @@
+import { GoogleGenAI } from "@google/genai";
+
 const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -173,7 +175,40 @@ Rules:
 - AI must explain the significance of the facts in the forensicSignals and executiveSummary.
 - Output JSON only. No markdown. No code fences.`;
 
-async function callAIProvider(url: string, apiKey: string, model: string, message: string): Promise<string> {
+async function callGemini(message: string, isHealthCheck = false): Promise<{ data: string; model: string }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+
+  const model = "gemini-4-hydrogen";
+  const response = await ai.models.generateContent({
+    model,
+    contents: message,
+    config: {
+      systemInstruction: isHealthCheck
+        ? "Respond with valid JSON only: {\"status\":\"ok\"}."
+        : SYSTEM_PROMPT,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const content = response.text;
+  if (!content) throw new Error("Empty response from Gemini API");
+  return { data: content, model };
+}
+
+let cachedGroqModel: string | null = null;
+let cachedOpenRouterModel: string | null = null;
+
+async function callAIProvider(url: string, apiKey: string, model: string, message: string, maxTokens = 1536, isHealthCheck = false): Promise<string> {
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -182,21 +217,28 @@ async function callAIProvider(url: string, apiKey: string, model: string, messag
       "HTTP-Referer": "https://ai.studio/build",
       "X-Title": "ScamScanner",
     },
+    signal: AbortSignal.timeout(isHealthCheck ? 8000 : 20000),
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: isHealthCheck ? "Respond with valid JSON only: {\"status\":\"ok\"}." : SYSTEM_PROMPT },
         { role: "user", content: message },
       ],
-      max_tokens: 1536,
+      max_tokens: maxTokens,
       temperature: 0.1,
       response_format: { type: "json_object" }
     }),
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || `API error ${res.status}`);
+    let errMsg = `API error ${res.status}`;
+    try {
+      const err = await res.json();
+      errMsg = err.error?.message || errMsg;
+    } catch {
+      // Ignore JSON parse errors on error payloads
+    }
+    throw new Error(errMsg);
   }
 
   const data = await res.json();
@@ -205,37 +247,131 @@ async function callAIProvider(url: string, apiKey: string, model: string, messag
   return content;
 }
 
-async function performAnalysisWithFallback(message: string): Promise<{ data: string; provider: string; model: string; errors?: any }> {
+async function getGroqModels(apiKey: string): Promise<string[]> {
+  const defaults = [
+    "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.1-8b-instant",
+    "qwen/qwen3-32b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+  ];
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/models", {
+      headers: { "Authorization": `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return cachedGroqModel ? [cachedGroqModel, ...defaults] : defaults;
+    const json = await res.json();
+    const available = (json.data || [])
+      .map((m: any) => m.id as string)
+      .filter((id: string) =>
+        id &&
+        !id.includes("whisper") &&
+        !id.includes("tts") &&
+        !id.includes("guard") &&
+        !id.includes("safeguard")
+      );
+    const nonAllam = available.filter((id: string) => !id.includes("allam"));
+    const allam = available.filter((id: string) => id.includes("allam"));
+    const prioritized = [
+      ...(cachedGroqModel ? [cachedGroqModel] : []),
+      ...defaults.filter(d => available.includes(d)),
+      ...nonAllam,
+      ...allam,
+    ];
+    return Array.from(new Set(prioritized)).slice(0, 8);
+  } catch {
+    return cachedGroqModel ? Array.from(new Set([cachedGroqModel, ...defaults])) : defaults;
+  }
+}
+
+async function getOpenRouterFreeModels(): Promise<string[]> {
+  const defaults = [
+    "openrouter/free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+  ];
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/models", {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return cachedOpenRouterModel ? [cachedOpenRouterModel, ...defaults] : defaults;
+    const json = await res.json();
+    const freeModels = (json.data || [])
+      .filter((m: any) => typeof m.id === "string" && m.id.endsWith(":free"))
+      .map((m: any) => m.id as string);
+    const prioritized = [
+      ...(cachedOpenRouterModel ? [cachedOpenRouterModel] : []),
+      "openrouter/free",
+      ...defaults.filter(d => d === "openrouter/free" || freeModels.includes(d)),
+      ...freeModels,
+    ];
+    return Array.from(new Set(prioritized)).slice(0, 8);
+  } catch {
+    return cachedOpenRouterModel ? Array.from(new Set([cachedOpenRouterModel, ...defaults])) : defaults;
+  }
+}
+
+async function performAnalysisWithFallback(message: string, isHealthCheck = false): Promise<{ data: string; provider: string; model: string; errors?: any }> {
+  const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
   const openrouterKey = process.env.OPENROUTER_API_KEY;
 
-  if (!groqKey && !openrouterKey) {
-    throw new Error("No AI provider keys configured. Add GROQ_API_KEY or OPENROUTER_API_KEY in Vercel.");
+  if (!geminiKey && !groqKey && !openrouterKey) {
+    throw new Error("No AI provider keys configured. Add GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
   }
 
   const providerErrors: any = {};
+  const maxTokens = isHealthCheck ? 512 : 2048;
+
+  if (geminiKey) {
+    try {
+      const { data, model } = await callGemini(message, isHealthCheck);
+      return { data, provider: "gemini", model };
+    } catch (err: any) {
+      providerErrors.gemini = err.message;
+    }
+  }
 
   if (groqKey) {
-    const model = "llama-3.1-8b-instant";
-    try {
-      const result = await callAIProvider("https://api.groq.com/openai/v1/chat/completions", groqKey, model, message);
-      return { data: result, provider: "groq", model };
-    } catch (err: any) {
-      providerErrors.groq = err.message;
+    if (cachedGroqModel) {
+      try {
+        const result = await callAIProvider("https://api.groq.com/openai/v1/chat/completions", groqKey, cachedGroqModel, message, maxTokens, isHealthCheck);
+        return { data: result, provider: "groq", model: cachedGroqModel };
+      } catch {
+        cachedGroqModel = null;
+      }
+    }
+    const models = await getGroqModels(groqKey);
+    for (const model of models) {
+      try {
+        const result = await callAIProvider("https://api.groq.com/openai/v1/chat/completions", groqKey, model, message, maxTokens, isHealthCheck);
+        cachedGroqModel = model;
+        return { data: result, provider: "groq", model };
+      } catch (err: any) {
+        if (!providerErrors.groq) providerErrors.groq = [];
+        providerErrors.groq.push(`${model}: ${err.message}`);
+      }
     }
   }
 
   if (openrouterKey) {
-    const models = [
-      "meta-llama/llama-3.1-8b-instruct:free",
-      "google/gemma-2-9b-it:free",
-      "mistralai/mistral-7b-instruct:free",
-      "openrouter/auto"
-    ];
-
+    if (cachedOpenRouterModel) {
+      try {
+        const result = await callAIProvider("https://openrouter.ai/api/v1/chat/completions", openrouterKey, cachedOpenRouterModel, message, maxTokens, isHealthCheck);
+        return { data: result, provider: "openrouter", model: cachedOpenRouterModel };
+      } catch {
+        cachedOpenRouterModel = null;
+      }
+    }
+    const models = await getOpenRouterFreeModels();
     for (const model of models) {
       try {
-        const result = await callAIProvider("https://openrouter.ai/api/v1/chat/completions", openrouterKey, model, message);
+        const result = await callAIProvider("https://openrouter.ai/api/v1/chat/completions", openrouterKey, model, message, maxTokens, isHealthCheck);
+        cachedOpenRouterModel = model;
         return { data: result, provider: "openrouter", model };
       } catch (err: any) {
         if (!providerErrors.openrouter) providerErrors.openrouter = [];
@@ -275,7 +411,7 @@ export default async function handler(req: any, res: any) {
 
   if (resolvedAction === "status") {
     try {
-      const { provider, model } = await performAnalysisWithFallback("hi");
+      const { provider, model } = await performAnalysisWithFallback("Return {\"status\":\"ok\"} in JSON.", true);
       return res.json({ ok: true, status: "OPERATIONAL", provider, model });
     } catch (err: any) {
       return res.json({ ok: false, status: "API_ERROR", message: err.message, errors: err.providerErrors });
@@ -699,6 +835,14 @@ Strict Rules for Analysis:
       }
 
       // FINAL MERGE: Strictly enforce backend calculations
+      const normalizedActions = Array.isArray(aiResult.recommendedActions)
+        ? aiResult.recommendedActions.map((item: any) =>
+            typeof item === "string"
+              ? item
+              : [item?.action, item?.description].filter(Boolean).join(": ") || JSON.stringify(item)
+          )
+        : ["Proceed with caution", "Verify sender through secondary channels"];
+
       const finalResult = {
         legitimacyPercentage: Math.round(calculatedPercentage),
         verdict: calculatedVerdict,
@@ -707,9 +851,9 @@ Strict Rules for Analysis:
           ...baseSignals,
           ...(aiResult.forensicSignals || []).filter((s: any) => !baseSignals.some(b => b.name === s.name))
         ],
-        sourcesChecked: sourcesUsed,
+        sourcesChecked: Array.from(new Set(sourcesUsed)),
         limitations: limitations,
-        recommendedActions: aiResult.recommendedActions || ["Proceed with caution", "Verify sender through secondary channels"]
+        recommendedActions: normalizedActions
       };
 
       scanCache.set(cacheKey, { result: finalResult, expiresAt: Date.now() + CACHE_TTL_MS });
